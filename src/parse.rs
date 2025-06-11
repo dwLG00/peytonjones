@@ -34,7 +34,7 @@ pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, ()> {
     let mut it = tokens.iter().peekable();
 
     while it.peek().is_some() {
-        let next_statement = parse_statement(&mut it, 0);
+        let next_statement = parse_statement(&mut it, &mut symbol_stack);
         match next_statement {
             Ok(statement) => { statements.push(statement); },
             Err(_) => { return Err(()); }
@@ -43,7 +43,9 @@ pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, ()> {
     Ok(statements)
 }
 
-fn parse_statement<'a>(it: &mut impl Iterator<Item=&'a Token>, ss: &mut SymbolStack) -> Result<Statement, ()> {
+fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Statement, ()> 
+    where I: Iterator<Item=&'a Token>
+{
     // match Term
     let expect_symbol = parse_symbol(it, ss);
     match expect_symbol {
