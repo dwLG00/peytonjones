@@ -35,6 +35,9 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     buffer.clear();
                     in_num = false;
                     prev_was_whitespace = true;
+                    if c == '\n' { // also push a newline
+                        tokens.push(Token::Newline);
+                    }
                 },
                 c if c.is_ascii_digit() => {
                     buffer.push(c);
@@ -70,6 +73,9 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     buffer.clear();
                     in_term = false;
                     prev_was_whitespace = true;
+                    if c == '\n' { // Also push newline
+                        tokens.push(Token::Newline);
+                    }
                 },
                 c if c.is_alphanumeric() => {
                     buffer.push(c);
@@ -93,6 +99,10 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
             }
         } else {
             match c {
+                '\n' => {
+                    prev_was_whitespace = true;
+                    tokens.push(Token::Newline);
+                },
                 c if c.is_whitespace() => {
                     prev_was_whitespace = true;
                 }, // just ignore
@@ -247,7 +257,8 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     match tokens[toklen - 1] {
                         Token::Eq | Token::Plus | Token::Minus | Token::Ast | Token::Div
                         | Token::LT | Token::GT | Token::RBracket | Token::RParen
-                        | Token::StrLiteral(_) | Token::NumLiteral(_) | Token::Term(_) => {
+                        | Token::StrLiteral(_) | Token::NumLiteral(_) | Token::Term(_)
+                        | Token::Newline => {
                             tokens.push(Token::RParen);
                             prev_was_whitespace = false;
                         },
@@ -278,7 +289,8 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     match tokens[toklen - 1] {
                         Token::Eq | Token::Plus | Token::Minus | Token::Ast | Token::Div
                         | Token::LT | Token::GT | Token::LBracket | Token::RBracket | Token::RParen
-                        | Token::StrLiteral(_) | Token::NumLiteral(_) | Token::Term(_) => {
+                        | Token::StrLiteral(_) | Token::NumLiteral(_) | Token::Term(_)
+                        | Token::Newline => {
                             tokens.push(Token::RBracket);
                             prev_was_whitespace = false;
                         },

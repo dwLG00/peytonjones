@@ -28,4 +28,5 @@ pub enum Token {
     GT, // >
     // Atoms - e.g. variables, builtins, etc
     Term(String),
+    Newline
 }
