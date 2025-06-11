@@ -101,7 +101,10 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
             match c {
                 '\n' => {
                     prev_was_whitespace = true;
-                    tokens.push(Token::Newline);
+                    if tokens.len() != 0 && tokens[tokens.len() - 1] != Token::Newline {
+                        // 1) prevent leading newlines, and 2) prevent multiple newlines in a row
+                        tokens.push(Token::Newline);
+                    }
                 },
                 c if c.is_whitespace() => {
                     prev_was_whitespace = true;
@@ -336,6 +339,10 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
     } else if in_term {
         let s : String = buffer.iter().collect();
         tokens.push(Token::Term(s));
+    }
+    if tokens.len() > 0 && tokens[tokens.len() - 1] != Token::Newline {
+        // Manually add in a trailing newline to make things easier
+        tokens.push(Token::Newline);
     }
     Result::Ok(tokens)
 }

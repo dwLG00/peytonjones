@@ -1,6 +1,6 @@
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     // Literals
     NumLiteral(u32),

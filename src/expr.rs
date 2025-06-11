@@ -19,7 +19,7 @@ pub enum Expr {
 pub enum Atom {
     Term(Symbol),
     StringLit(String),
-    IntLit(i32),
+    IntLit(u32),
     BoolLit(bool),
     ListComp(Symbol, Symbol)
 }
