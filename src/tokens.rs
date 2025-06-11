@@ -2,25 +2,29 @@
 
 pub enum Token {
     // Literals
-    NumLiteral(i32),
+    NumLiteral(u32),
     StrLiteral(String),
     // Symbols
-    Eq,
-    Plus,
-    Minus,
-    Ast, // asterisk
-    Div,
-    Colon,
+    Eq, // =
+    Plus, // +
+    Minus, // -
+    Ast, // *
+    Div, // /
+    Colon, // :
     DColon, // ::
     Walrus, // :=
     Pipe, // |
-    Comma,
-    LParen,
-    RParen,
-    LBracket,
-    RBracket,
+    Comma, // ,
+    LParen, // (
+    RParen, // )
+    LBracket, // [
+    RBracket, // ]
     LArrow, // <-
     RArrow, // ->
+    LBArrow, // <=
+    RBArrow, // =>
+    LT, // <
+    GT, // >
     // Atoms - e.g. variables, builtins, etc
     Term(String),
 }
