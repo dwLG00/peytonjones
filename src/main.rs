@@ -36,7 +36,7 @@ fn main() {
     let expr : String = format!("let x = 5 in (concat [0:[1:[]]] [x])");
     let lex_result = lex(expr);
     match lex_result {
-        Ok(_) => { println!("parsed ok!"); },
+        Ok(toks) => { println!("{:?}", toks); },
         Err(msg) => { println!("Error: {}", msg); }
     }
 }

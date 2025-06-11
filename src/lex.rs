@@ -78,7 +78,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     let s : String = buffer.iter().collect();
                     tokens.push(Token::StrLiteral(s));
                     buffer.clear();
-                    in_string = false;
+                    in_term = false;
                     match c {
                         ')' => { tokens.push(Token::RParen); },
                         ']' => { tokens.push(Token::RBracket); },
