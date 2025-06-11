@@ -20,7 +20,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     in_string = false;
                 },
                 '\n' => {
-                    return Result::Err("Found newline in string literal".to_string());
+                    return Result::Err(format!("[{}] Found newline in string literal", i));
                 }
                 c => {
                     buffer.push(c);
@@ -55,11 +55,11 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                         ']' => { tokens.push(Token::RBracket); },
                         ':' => { tokens.push(Token::Colon); },
                         ',' => { tokens.push(Token::Comma); },
-                        _ => { return Result::Err(format!("Reached unreachable code while lexing number!")) }
+                        _ => { return Result::Err(format!("[{}] Reached unreachable code while lexing number!", i)) }
                     }
                 },
                 c => { // error
-                    return Result::Err(format!("Expected digit or alphabetic character; found '{}'", c));
+                    return Result::Err(format!("[{}] Expected digit or alphabetic character; found '{}'", i, c));
                 }
             }
         } else if in_term {
@@ -84,11 +84,11 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                         ']' => { tokens.push(Token::RBracket); },
                         ':' => { tokens.push(Token::Colon); },
                         ',' => { tokens.push(Token::Comma); },
-                        _ => { return Result::Err(format!("Reached unreachable code while lexing term!")) }
+                        _ => { return Result::Err(format!("[{}] Reached unreachable code while lexing term!", i)) }
                     }
                 },
                 c => {
-                    return Result::Err(format!("Expected digit or alphabetic character; found '{}'", c));
+                    return Result::Err(format!("[{}] Expected digit or alphabetic character; found '{}'", i, c));
                 }
             }
         } else {
@@ -108,7 +108,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                                 buffer.push(c);
                             },
                             _ => {
-                                return Result::Err(format!("Didn't expect alphanumeric character '{}' after symbol", c));
+                                return Result::Err(format!("[{}] Didn't expect alphanumeric character '{}' after symbol", i, c));
                             }
                         }
                     } else {
@@ -125,7 +125,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                                 buffer.push(c);
                             },
                             _ => {
-                                return Result::Err(format!("Didn't expect alphanumeric character '{}' after symbol", c));
+                                return Result::Err(format!("[{}] Didn't expect alphanumeric character '{}' after symbol", i, c));
                             }
                         }
                     } else {
@@ -141,7 +141,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                             Token::Colon => { tokens[toklen - 1] = Token::Walrus; },
                             Token::LT => { tokens[toklen - 1] = Token::LBArrow; },
                             Token::LParen => { tokens.push(Token::Eq); },
-                            _ => { return Result::Err("Didn't expect '='".to_string()); }
+                            _ => { return Result::Err(format!("[{}] Didn't expect '='", i)); }
                         }
                     } else {
                         tokens.push(Token::Eq);
@@ -152,7 +152,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     if !prev_was_whitespace { 
                         match tokens[toklen - 1] {
                             Token::LParen => { tokens.push(Token::Plus); },
-                            _ => { return Result::Err("Didn't expect '+'".to_string()); }
+                            _ => { return Result::Err(format!("[{}] Didn't expect '+'", i)); }
                         }
                     } else {
                         tokens.push(Token::Plus);
@@ -168,7 +168,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                         match tokens[toklen - 1] {
                             Token::LT => { tokens[toklen - 1] = Token::LArrow; },
                             Token::LParen => { tokens.push(Token::Minus); },
-                            _ => { return Result::Err(format!("Didn't expect '-'")) }
+                            _ => { return Result::Err(format!("[{}] Didn't expect '-'", i)) }
                         }
                     }
                 },
@@ -176,7 +176,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     if !prev_was_whitespace {
                         match tokens[toklen - 1] {
                             Token::LParen => { tokens.push(Token::Ast); },
-                            _ => { return Result::Err(format!("Didn't expect '*'")); }
+                            _ => { return Result::Err(format!("[{}] Didn't expect '*'", i)); }
                         }
                     } else {
                         tokens.push(Token::Ast);
@@ -187,7 +187,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     if !prev_was_whitespace {
                         match tokens[toklen - 1] {
                             Token::LParen => { tokens.push(Token::Div); },
-                            _ => { return Result::Err(format!("Didn't expect '/'")); }
+                            _ => { return Result::Err(format!("[{}] Didn't expect '/'", i)); }
                         }
                     } else {
                         tokens.push(Token::Div);
@@ -202,7 +202,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                             Token::StrLiteral(_) => { // colons after non-whitespace are allowed, e.g. [x:xs]
                                 tokens.push(Token::Colon); 
                             },
-                            _ => { return Result::Err(format!("Didn't expect ':'")); }
+                            _ => { return Result::Err(format!("[{}] Didn't expect ':'", i)); }
                         }
                     } else {
                         tokens.push(Token::Colon);
@@ -214,7 +214,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                         tokens.push(Token::Pipe);
                         prev_was_whitespace = false;
                     } else {
-                        return Result::Err(format!("Didn't expect '|'"));
+                        return Result::Err(format!("[{}] Didn't expect '|'", i));
                     }
                 },
                 ',' => {
@@ -228,7 +228,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                             | Token::StrLiteral(_) | Token::NumLiteral(_) | Token::Term(_) => {
                                 tokens.push(Token::Comma);
                             },
-                            _ => { return Result::Err(format!("Didn't expect ','")); }
+                            _ => { return Result::Err(format!("[{}] Didn't expect ','", i)); }
                         }
                     }
                 },
@@ -236,7 +236,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     if !prev_was_whitespace {
                         match tokens[toklen - 1] {
                             Token::LParen => { tokens.push(Token::LParen); },
-                            _ => { return Result::Err(format!("Didn't expect '('"))}
+                            _ => { return Result::Err(format!("[{}] Didn't expect '('", i))}
                         }
                     } else {
                         tokens.push(Token::LParen);
@@ -252,7 +252,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                             prev_was_whitespace = false;
                         },
                         _ => {
-                            return Result::Err(format!("Didn't expect ')'"));
+                            return Result::Err(format!("[{}] Didn't expect ')'", i));
                         }
                     }
                 },
@@ -263,7 +263,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                                 tokens.push(Token::LBracket);
                             },
                             _ => {
-                                return Result::Err(format!("Didn't expect '['"));
+                                return Result::Err(format!("[{}] Didn't expect '['", i));
                             }
                         }
                     } else {
@@ -273,7 +273,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                 },
                 ']' => {
                     if toklen == 0 { // Invalid
-                        return Result::Err(format!("Didn't expect ']'"));
+                        return Result::Err(format!("[{}] Didn't expect ']'", i));
                     }
                     match tokens[toklen - 1] {
                         Token::Eq | Token::Plus | Token::Minus | Token::Ast | Token::Div
@@ -283,13 +283,13 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                             prev_was_whitespace = false;
                         },
                         _ => {
-                            return Result::Err(format!("Didn't expect ']'"))
+                            return Result::Err(format!("[{}] Didn't expect ']'", i))
                         }
                     }
                 },
                 '<' => {
                     if !prev_was_whitespace {
-                        return Result::Err(format!("Didn't expect '<'"));
+                        return Result::Err(format!("[{}] Didn't expect '<'", i));
                     } else {
                         tokens.push(Token::LT);
                         prev_was_whitespace = false;
@@ -301,7 +301,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                             Token::Minus => { tokens[toklen - 1] = Token::RArrow; },
                             Token::Eq => { tokens[toklen - 1] = Token::RBArrow },
                             _ => {
-                                return Result::Err(format!("Didn't expect '>'"));
+                                return Result::Err(format!("[{}] Didn't expect '>'", i));
                             }
                         }
                     } else {
@@ -310,13 +310,13 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                     }
                 },
                 c => {
-                    return Result::Err(format!("Didn't expect '{}'", c));
+                    return Result::Err(format!("[{}] Didn't expect '{}'", i, c));
                 }
             }
         }
     }
     if in_string {
-        return Result::Err(format!("File ended with open quote"));
+        return Result::Err(format!("[EOF] File ended with open quote!"));
     } else if in_num {
         let s : String = buffer.iter().collect();
         let i : u32 = s.parse().unwrap();
