@@ -8,19 +8,29 @@ pub enum Statement {
 }
 
 pub enum Expr {
-    App(Symbol, Vec<Expr>), // Apply
-    Binop(u32, Box<Expr>, Box<Expr>),
+    App(Box<Expr>, Box<Expr>), // Apply
+    Binop(Binop, Box<Expr>, Box<Expr>),
     Atom(Atom),
     IfElse(Box<Expr>, Box<Expr>, Box<Expr>),
     List(Vec<Expr>),
-    Where(Box<Expr>, Vec<(Atom, Expr)>)
+    ListCon(Box<Expr>, Box<Expr>), // [expr1:expr2]
+    LetIn(Box<Statement>, Box<Expr>),
+    //Where(Box<Expr>, Vec<(Atom, Expr)>)
+}
+
+pub enum Binop {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Lt, // <
+    Gt // >
 }
 
 pub enum Atom {
     Term(Symbol),
     StringLit(String),
     IntLit(u32),
-    BoolLit(bool),
-    ListComp(Symbol, Symbol)
+    BoolLit(bool)
 }
 
