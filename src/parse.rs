@@ -56,7 +56,10 @@ pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, String> {
     while it.peek().is_some() {
         let next_statement = parse_statement(&mut it, &mut symbol_stack);
         match next_statement {
-            Ok(statement) => { statements.push(statement); },
+            Ok(statement) => {
+                statements.push(statement);
+                skip_newlines_to_end(&mut it); // Skip newlines until we hit another token or EOF
+            },
             Err(e) => { return Err(e); }
         }
     }
@@ -142,8 +145,14 @@ fn parse_expr<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, context: ExprCo
         skip_newlines(it)?;
         let expr = parse_expr_greedy(it, ss, ExprContext::InParen)?;
         skip_newlines(it)?;
-        parse_exact_token(it, Token::RParen);
-        Ok(expr)
+        let idx = grab_index(it);
+        match parse_exact_token(it, Token::RParen) {
+            Ok(_) => Ok(expr),
+            Err(maybe_tok) => match maybe_tok {
+                Some(tok) => Err(format!("[parse_expr] @{}, Expected `)`, found `{:?}`", idx, tok)),
+                None => Err(format!("[parse_expr] @End, Hit EOF"))
+            }
+        }
 
     } else if parse_exact_token_weak(it, Token::LBracket) {
         skip_newlines(it)?;
@@ -171,7 +180,6 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
         None => Err(format!("[parse_expr_greedy_aux] @End, Hit EOF")),
         Some((idx, token)) => match token {
             Token::Newline => {
-                it.next();
                 Ok(prev_expr)
             },
             // Match binary ops
@@ -217,6 +225,7 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
                 let expr = Expr::Binop(Binop::Gt, Box::new(prev_expr), Box::new(next_expr));
                 parse_expr_greedy_aux(it, ss, context, expr)
             },
+            // Conditional terminals
             Token::Colon => {
                 match context {
                     ExprContext::InList => Ok(prev_expr),
@@ -232,7 +241,7 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
             Token::RBracket => {
                 match context {
                     ExprContext::InList => Ok(prev_expr),
-                    _ => Err(format!("[parse_expr_greedy_aux] @{}, unexpected `]`", idx))
+                    _ => Err(format!("[parse_expr_greedy_aux] @{}, unexpected `]` (context: {:?})", idx, context)) //TODO Revert
                 }
             },
             Token::RParen => {
@@ -270,7 +279,6 @@ fn parse_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Expr,
     where I: Iterator<Item=(usize, &'a Token)>
 {
     // match either ] or expr:expr] or expr{, expr}]
-
     match it.peek() {
         None => Err(format!("[parse_list] @End, Hit EOF")),
         Some((_, token)) => match token {
@@ -281,7 +289,6 @@ fn parse_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Expr,
             _ => { // Parse as an expression
                 let expr1 = parse_expr_greedy(it, ss, ExprContext::InList)?;
                 skip_newlines(it)?;
-                let idx = grab_index(it);
                 match it.next() {
                     None => Err(format!("[parse_list] @End, Hit EOF")), // EOF
                     Some((idx, token)) => match token {
@@ -291,6 +298,7 @@ fn parse_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Expr,
                             let expect_rbracket = skip_newlines(it)?;
                             match expect_rbracket {
                                 Token::RBracket => {
+                                    it.next();
                                     Ok(Expr::ListCon(Box::new(expr1), Box::new(expr2)))
                                 },
                                 t => Err(format!("[parse_list] @{}, Expected `]`, found `{:?}` instead", idx, t))
@@ -390,9 +398,7 @@ fn parse_atom<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Atom,
 {
     // Match atom from it.peek(); advance if it succeeds, and don't if it doesn't
     match it.next() {
-        Some((idx, token)) => {
-            println!("Tried to parse atom {:?} @{}", token, idx);
-        match token {
+        Some((idx, token)) => match token {
             Token::Term(s) => 
                 if s == "true" {
                     Ok(Atom::BoolLit(true))
@@ -407,7 +413,7 @@ fn parse_atom<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Atom,
             Token::StrLiteral(s) => Ok(Atom::StringLit(s.to_string())),
             Token::NumLiteral(n) => Ok(Atom::IntLit(*n)),
             t => Err(format!("[parse_atom] @{}, Expected atom, found `{:?}` instead", idx, t))
-        }},
+        },
         None => Err(format!("[parse_atom] @End, Expected atom, found EOF"))
     }
 }
@@ -515,6 +521,8 @@ fn skip_newlines<'a, I>(it: &mut Peekable<I>) -> Result<&'a Token, String>
 {
     // Skips all the newlines so that calling `it.next()` will give you a non-newline item.
     // Returns a reference to the next token as well, or Err(()) if the iterator is now empty.
+
+    // Run this once, error if there are _no_ newlines and we reach EOF
     loop {
         let peek = it.peek();
         match peek {
@@ -522,6 +530,22 @@ fn skip_newlines<'a, I>(it: &mut Peekable<I>) -> Result<&'a Token, String>
             Some((_, tok)) => match tok {
                 Token::Newline => { it.next(); },
                 t => { return Ok(t); }
+            }
+        }
+    }
+}
+
+fn skip_newlines_to_end<'a, I>(it: &mut Peekable<I>)
+    where I: Iterator<Item=(usize, &'a Token)>, 
+{
+    // Same as skip_newlines, except EOFs after a newline are OK
+    loop {
+        let peek = it.peek();
+        match peek {
+            None => { break;}
+            Some((_, tok)) => match tok {
+                Token::Newline => { it.next(); },
+                _ => { break; }
             }
         }
     }
