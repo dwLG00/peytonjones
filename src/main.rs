@@ -66,12 +66,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         println!("[{}] {:?}", i, statement);
                     }
                 },
-                Err(_) => {
-                    println!("Parsing error...");
+                Err(msg) => {
+                    println!("Parsing error: {}", msg);
                 }
             }
         },
-        Err(msg) => { println!("Error: {}", msg); }
+        Err(msg) => { println!("Lexing error: {}", msg); }
     }
     Ok(())
 
