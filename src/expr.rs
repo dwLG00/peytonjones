@@ -27,7 +27,8 @@ pub enum Binop {
     Mul,
     Div,
     Lt, // <
-    Gt // >
+    Gt, // >
+    Eq
 }
 
 #[derive(Debug)]

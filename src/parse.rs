@@ -37,7 +37,6 @@ enum ExprContext {
     InIf1, // if [here] then xyz else abc
     InIf2, // if xyz then [here] else abc
     InList,
-    AfterExpr, // helps match binops
     None
 }
 
@@ -203,6 +202,12 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
                 let expr = Expr::Binop(Binop::Gt, Box::new(prev_expr), Box::new(next_expr));
                 parse_expr_greedy_aux(it, ss, context, expr)
             },
+            Token::Eq => {
+                it.next();
+                let next_expr = parse_expr(it, ss, context.clone())?;
+                let expr = Expr::Binop(Binop::Gt, Box::new(prev_expr), Box::new(next_expr));
+                parse_expr_greedy_aux(it, ss, context, expr)
+            }
             // Try to apply
             _ => {
                 let next_expr = parse_expr(it, ss, context.clone())?;
@@ -212,118 +217,6 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
         }
     }
 }
-/*
-// Try to match `let`, then try to match `if`, then try to match ``
-if parse_exact_term_weak(it, &"let".to_string()) { // let statement
-    ss.push_stack();
-    skip_newlines(it)?;
-    let statement = parse_statement(it, ss)?;
-    skip_newlines(it)?;
-    parse_exact_term(it, &"in".to_string());
-    skip_newlines(it)?;
-    let expr = parse_expr_greedy(it, ss, context)?;
-    ss.pop_stack();
-    return Ok(Expr::LetIn(Box::new(statement), Box::new(expr)))
-
-} else if parse_exact_term_weak(it, &"if".to_string()) { // if statement
-    skip_newlines(it)?;
-    let split = parse_expr_greedy(it, ss, ExprContext::InIf1)?;
-    skip_newlines(it)?;
-    parse_exact_term(it, &"then".to_string());
-    skip_newlines(it)?;
-    let expr1 = parse_expr_greedy(it, ss, ExprContext::InIf2)?;
-    skip_newlines(it)?;
-    parse_exact_term(it, &"else".to_string());
-    skip_newlines(it)?;
-    let expr2 = parse_expr_greedy(it, ss, context)?;
-    Ok(Expr::IfElse(Box::new(split), Box::new(expr1), Box::new(expr2)))
-
-} else if parse_exact_token_weak(it, Token::LParen) { // (expr)
-    skip_newlines(it)?;
-    let expr = parse_expr_greedy(it, ss, ExprContext::InParen)?;
-    skip_newlines(it)?;
-    parse_exact_token(it, Token::RParen);
-    Ok(expr)
-
-} else if parse_exact_token_weak(it, Token::LBracket) {
-    skip_newlines(it)?;
-    let list = parse_list(it, ss)?;
-    match it.peek() {
-        Some(token) => match token {
-            Token::Newline => Ok(list),
-            _ => parse_expr_app(it, ss, list)
-        },
-        None => Err(())
-    }
-
-} else {
-    // match atom, then try to match additional expressions
-    let atom = parse_atom(it, ss)?;
-    match it.peek() {
-        Some(tok) => match tok {
-            Token::Newline => Ok(Expr::Atom(atom)),
-            Token::RParen => if context == ExprContext::InParen {
-                Ok(Expr::Atom(atom))
-            } else { // out of place
-                Err(())
-            },
-            Token::RBracket => if context == ExprContext::InList {
-                Ok(Expr::Atom(atom))
-            } else { // out of place
-                Err(())
-            },
-            Token::Term(t) => if t == "then" && context == ExprContext::InIf1 {
-                Ok(Expr::Atom(atom))
-            } else if t == "else" && context == ExprContext::InIf2 {
-                Ok(Expr::Atom(atom))
-            } else { // Try to match next expression
-                /*
-                let next_expression = parse_expr_greedy(it, ss, ExprContext::AfterExpr)?;
-                Ok(
-                    Expr::App(Box::new(Expr::Atom(atom)), Box::new(next_expression))
-                )
-                */
-                todo!()
-            },
-            _ => Err(())
-        },
-        None => Err(()) // We should never EOF while scanning for an expression, 
-        //                 bc we always have a trailing newline
-    }
-}
-*/
-
-/*
-fn parse_rest<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, prev_expr: Expr) -> Result<Expr, ()>
-    where I: Iterator<Item=&'a Token>
-{
-    // Parses either a binop or an application
-    match it.peek() {
-        None => Err(()),
-        Some(token) => match token {
-            Token::Plus => {
-
-            }
-        }
-    }
-}
-fn parse_expr_app<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, prev_expr: Expr) -> Result<Expr, ()>
-    where I: Iterator<Item=&'a Token>
-{
-    let next_expr = parse_expr_greedy(it, ss, ExprContext::AfterExpr)?;
-    let expr = Expr::App(Box::new(prev_expr), Box::new(next_expr));
-    match it.peek() {
-        None => Err(()), // EOF
-        Some(token) => match token {
-            Token::Newline => {
-                it.next();
-                Ok(expr)
-            },
-            _ => parse_expr_app(it, ss, expr)
-        }
-    }
-}
-*/
 
 fn parse_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Expr, String>
     where I: Iterator<Item=&'a Token>
