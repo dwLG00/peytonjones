@@ -222,7 +222,7 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
             Token::Eq => {
                 it.next();
                 let next_expr = parse_expr(it, ss, context.clone())?;
-                let expr = Expr::Binop(Binop::Gt, Box::new(prev_expr), Box::new(next_expr));
+                let expr = Expr::Binop(Binop::Eq, Box::new(prev_expr), Box::new(next_expr));
                 parse_expr_greedy_aux(it, ss, context, expr)
             },
             // Conditional terminals
