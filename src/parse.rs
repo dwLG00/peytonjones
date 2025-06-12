@@ -29,7 +29,7 @@ ATOM :=         TERM
 BINOP :=        + | - | * | / | < | >
 */
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 enum ExprContext {
     // Stores context about the expression (e.g. am I in a 
     // parenthesis block? an if block?)
@@ -39,6 +39,14 @@ enum ExprContext {
     InList,
     None
 }
+
+const RESERVED_TERMS: [&'static str; 5] = [
+    "if",
+    "then",
+    "else",
+    "let",
+    "in"
+];
 
 pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, String> {
     let mut statements : Vec<Statement> = Vec::new();
@@ -86,7 +94,7 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
             let idx = grab_index(it); // For debugging
             // match eq
             match parse_eq_weak(it) {
-                Ok(()) => {},
+                Ok(()) => { it.next(); },
                 Err(maybe_token) => match maybe_token {
                     Some(token) => { return Err(format!("[parse_statement] @{}, Expected `=` after statement beginning, found {:?}", idx, token)); },
                     None => { return Err(format!("[parse_statement] @End, Expected `=` after statement beginning, found EOF")); }
@@ -161,7 +169,7 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
 {
     match it.peek() {
         None => Err(format!("[parse_expr_greedy_aux] @End, Hit EOF")),
-        Some((_, token)) => match token {
+        Some((idx, token)) => match token {
             Token::Newline => {
                 it.next();
                 Ok(prev_expr)
@@ -208,9 +216,48 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
                 let next_expr = parse_expr(it, ss, context.clone())?;
                 let expr = Expr::Binop(Binop::Gt, Box::new(prev_expr), Box::new(next_expr));
                 parse_expr_greedy_aux(it, ss, context, expr)
+            },
+            Token::Colon => {
+                match context {
+                    ExprContext::InList => Ok(prev_expr),
+                    _ => Err(format!("[parse_expr_greedy_aux] @{}, unexpected `:` outside of list", idx))
+                }
+            },
+            Token::Comma => {
+                match context {
+                    ExprContext::InList => Ok(prev_expr),
+                    _ => Err(format!("[parse_expr_greedy_aux] @{}, unexpected `,` outside of list", idx))
+                }
+            },
+            Token::RBracket => {
+                match context {
+                    ExprContext::InList => Ok(prev_expr),
+                    _ => Err(format!("[parse_expr_greedy_aux] @{}, unexpected `]`", idx))
+                }
+            },
+            Token::RParen => {
+                match context {
+                    ExprContext::InParen => { return Ok(prev_expr); },
+                    _ => { return Err(format!("[parse_expr_greedy_aux] @{}, unexpected `)`", idx)); }
+                }
             }
             // Try to apply
             _ => {
+                match token {
+                    // Prevent reserved terms from being used
+                    Token::Term(t) => if t == "then" {
+                        match context {
+                            ExprContext::InIf1 => { return Ok(prev_expr); },
+                            _ => { return Err(format!("[parse_expr_greedy_aux] @{}, unexpected `then`", idx)); }
+                        }
+                    } else if t == "else" {
+                        match context {
+                            ExprContext::InIf2 => { return Ok(prev_expr); },
+                            _ => { return Err(format!("[parse_expr_greedy_aux] @{}, unexpected `else`", idx)); }
+                        }
+                    },
+                    _ => {}
+                }
                 let next_expr = parse_expr(it, ss, context.clone())?;
                 let expr = Expr::App(Box::new(prev_expr), Box::new(next_expr));
                 parse_expr_greedy_aux(it, ss, context, expr)
@@ -343,19 +390,24 @@ fn parse_atom<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Atom,
 {
     // Match atom from it.peek(); advance if it succeeds, and don't if it doesn't
     match it.next() {
-        Some((idx, token)) => match token {
-            Token::Term(s) => if s == "true" {
-                Ok(Atom::BoolLit(true))
-            } else if s == "false" {
-                Ok(Atom::BoolLit(false))
-            } else {
-                let symbol = ss.get_symbol(s);
-                Ok(Atom::Term(symbol))
-            },
+        Some((idx, token)) => {
+            println!("Tried to parse atom {:?} @{}", token, idx);
+        match token {
+            Token::Term(s) => 
+                if s == "true" {
+                    Ok(Atom::BoolLit(true))
+                } else if s == "false" {
+                    Ok(Atom::BoolLit(false))
+                } else if reserved(s) {
+                    Err(format!("[parse_atom] @{}, Found reserved term `{}`", idx, s))
+                } else {
+                    let symbol = ss.get_symbol(s);
+                    Ok(Atom::Term(symbol))
+                },
             Token::StrLiteral(s) => Ok(Atom::StringLit(s.to_string())),
             Token::NumLiteral(n) => Ok(Atom::IntLit(*n)),
             t => Err(format!("[parse_atom] @{}, Expected atom, found `{:?}` instead", idx, t))
-        },
+        }},
         None => Err(format!("[parse_atom] @End, Expected atom, found EOF"))
     }
 }
@@ -368,12 +420,15 @@ fn parse_atom_weak<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
     match peek {
         Some((_, token)) => match token {
             Token::Term(s) => {
+                let tok = (**token).clone();
                 it.next();
                 // Check if s is secretly a boolean first
                 if s == "true" {
                     Ok(Atom::BoolLit(true))
                 } else if s == "false" {
                     Ok(Atom::BoolLit(false))
+                } else if reserved(s) {
+                    Err(Some(tok))
                 } else {
                     let symbol = ss.get_symbol(s);
                     Ok(Atom::Term(symbol))
@@ -479,4 +534,13 @@ fn grab_index<'a, I>(it: &mut Peekable<I>) -> usize
         None => 0, // This case should be handled by EOF anyways
         Some((idx, _)) => *idx
     }
+}
+
+fn reserved(s: &String) -> bool {
+    for i in 0..5 {
+        if RESERVED_TERMS[i] == s {
+            return true;
+        }
+    }
+    false
 }
