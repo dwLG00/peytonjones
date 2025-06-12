@@ -6,6 +6,7 @@ mod lex;
 mod parse;
 use crate::lambda::{LambdaExpr, display, reduce_all};
 use crate::lex::{lex};
+use crate::parse::{parse};
 
 use std::fs::File;
 use std::error::Error;
@@ -56,7 +57,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     */
     let lex_result = lex(contents);
     match lex_result {
-        Ok(toks) => {println!("{:?}", toks); },
+        Ok(toks) => {
+            println!("Lexed tokens: {:?}", toks);
+            let parse_result = parse(toks);
+            match parse_result {
+                Ok(statements) => {
+                    for (i, statement) in statements.iter().enumerate() {
+                        println!("[{}] {:?}", i, statement);
+                    }
+                },
+                Err(_) => {
+                    println!("Parsing error...");
+                }
+            }
+        },
         Err(msg) => { println!("Error: {}", msg); }
     }
     Ok(())
