@@ -1,5 +1,5 @@
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Symbol(u32); // ident, scope
 pub type SymbolTable = std::collections::HashMap<String, Symbol>;
 

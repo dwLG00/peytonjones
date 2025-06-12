@@ -40,12 +40,13 @@ enum ExprContext {
     None
 }
 
-const RESERVED_TERMS: [&'static str; 5] = [
+const RESERVED_TERMS: [&'static str; 6] = [
     "if",
     "then",
     "else",
     "let",
-    "in"
+    "in",
+    "main"
 ];
 
 pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, String> {
@@ -70,6 +71,30 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
     where I: Iterator<Item=(usize, &'a Token)>
 {
     // match Term
+    match it.peek() {
+        None => { return Err(format!("[parse_statemet] @End, Hit EOF")); },
+        Some((idx, token)) => match token {
+            Token::Term(t) => if t == "main" {
+                // match main instead
+                it.next();
+                let idx = grab_index(it);
+                match parse_eq_weak(it) {
+                    Err(maybe_tok) => match maybe_tok {
+                        None => { return Err(format!("[parse_statemet] @End, Hit EOF")); },
+                        Some(tok) => { return Err(format!("[parse_statement] @{}, Expected `=`, found `{:?}`", idx, tok)); }
+                    },
+                    Ok(()) => {
+                        let expect_expr = parse_expr_greedy(it, ss, ExprContext::None);
+                        match expect_expr {
+                            Ok(expr) => { return Ok(Statement::MainDef(expr)); },
+                            Err(e) => { return Err(e); }
+                        }
+                    }
+                }
+            },
+            token => { return Err(format!("[parse_statement] @{}, Expected term, found `{:?}`", idx, token))}
+        }
+    }
     let expect_symbol = parse_symbol(it, ss);
     match expect_symbol {
         Err(e) => Err(e),
@@ -81,15 +106,13 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
                 let expect_atom = parse_atom_weak(it, ss);
                 match expect_atom {
                     Ok(atom) => atoms.push(atom),
-                    Err(maybe_tok) => {
-                        match maybe_tok {
-                            Some(tok) => match tok {
-                                Token::Newline => { it.next(); }, // skip newlines atp
-                                _ => { break; }
-                            },
-                            None => { // Reached end of iterator
-                                return Err(format!("[parse_statement] @End, Hit EOF"));
-                            }
+                    Err(maybe_tok) => match maybe_tok {
+                        Some(tok) => match tok {
+                            Token::Newline => { it.next(); }, // skip newlines atp
+                            _ => { break; }
+                        },
+                        None => { // Reached end of iterator
+                            return Err(format!("[parse_statement] @End, Hit EOF"));
                         }
                     }
                 }
@@ -97,7 +120,7 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
             let idx = grab_index(it); // For debugging
             // match eq
             match parse_eq_weak(it) {
-                Ok(()) => { it.next(); },
+                Ok(()) => {}, // skips for you
                 Err(maybe_token) => match maybe_token {
                     Some(token) => { return Err(format!("[parse_statement] @{}, Expected `=` after statement beginning, found {:?}", idx, token)); },
                     None => { return Err(format!("[parse_statement] @End, Expected `=` after statement beginning, found EOF")); }
@@ -387,7 +410,10 @@ fn parse_eq_weak<'a, I>(it: &mut Peekable<I>) -> Result<(), Option<Token>>
     match it.peek() {
         None => Err(None),
         Some((_, token)) => match token {
-            Token::Eq => Ok(()),
+            Token::Eq => {
+                it.next();
+                Ok(())
+            },
             t => Err(Some((**t).clone()))
         }
     }

@@ -4,8 +4,8 @@ use crate::symbols::{Symbol, SymbolTable};
 // A file is a list of statements
 #[derive(Debug)]
 pub enum Statement {
-    VarDef(Symbol, Expr),
-    FuncDef(Symbol, Vec<Atom>, Expr)
+    FuncDef(Symbol, Vec<Atom>, Expr),
+    MainDef(Expr) // main function
 }
 
 #[derive(Debug)]
