@@ -1,6 +1,13 @@
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Symbol(u32); // ident, scope
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Symbol(pub u32); // ident, scope
+
+impl std::fmt::Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "s{}", self.0)
+    }
+}
+
 pub type SymbolTable = std::collections::HashMap<String, Symbol>;
 
 pub struct SymbolStack {

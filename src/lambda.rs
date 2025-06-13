@@ -1,9 +1,11 @@
+use crate::{expr::Atom, symbols::Symbol};
+
 
 #[derive(Clone)]
 pub enum LambdaExpr {
-    SimpleTerm(String),
+    SimpleTerm(Atom),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
-    Lambda(String, Box<LambdaExpr>),
+    Lambda(Symbol, Box<LambdaExpr>),
     LetIn(Vec<(String, LambdaExpr)>, Box<LambdaExpr>)
 }
 
@@ -143,24 +145,29 @@ fn reduce_cocktail(e : LambdaExpr, changed: bool) -> Changed<LambdaExpr> {
     }
 }
 
-fn alpha_reduction(e : LambdaExpr, to : &String) -> Changed<LambdaExpr> {
+fn alpha_reduction(e : LambdaExpr, to : Symbol) -> Changed<LambdaExpr> {
     // Only succeeds if the 
     match e {
-        LambdaExpr::Lambda(s, terms) => match _alpha_reduction(&terms, &s, to) {
-            Changed::Changed(expr) => Changed::Changed(LambdaExpr::Lambda(s.to_string(), Box::new(expr))),
-            Changed::Unchanged(expr) => Changed::Unchanged(LambdaExpr::Lambda(s.to_string(), Box::new(expr)))
+        LambdaExpr::Lambda(s, terms) => match _alpha_reduction(&terms, s, to) {
+            Changed::Changed(expr) => Changed::Changed(LambdaExpr::Lambda(s, Box::new(expr))),
+            Changed::Unchanged(expr) => Changed::Unchanged(LambdaExpr::Lambda(s, Box::new(expr)))
         },
         _ => Changed::Unchanged(e)
     }
 }
 
 // rename vars
-fn _alpha_reduction(e : &LambdaExpr, from : &String, to : &String) -> Changed<LambdaExpr> {
+fn _alpha_reduction(e : &LambdaExpr, from : Symbol, to : Symbol) -> Changed<LambdaExpr> {
     match e {
-        LambdaExpr::SimpleTerm(s) => if s == from {
-            Changed::Changed(LambdaExpr::SimpleTerm(to.to_string()))
-        } else {
-            Changed::Changed(LambdaExpr::SimpleTerm(s.to_string()))
+        LambdaExpr::SimpleTerm(a) => {
+            match a {
+                Atom::Term(s) => if *s == from {
+                    Changed::Changed(LambdaExpr::SimpleTerm(Atom::Term(to)))
+                } else {
+                    Changed::Unchanged(LambdaExpr::SimpleTerm(Atom::Term(from)))
+                },
+                a => Changed::Unchanged(LambdaExpr::SimpleTerm(a.clone()))
+            }
         },
         LambdaExpr::TermApplications(expr1, expr2) => {
             let expr1_new = _alpha_reduction(expr1, from, to);
@@ -183,8 +190,8 @@ fn _alpha_reduction(e : &LambdaExpr, from : &String, to : &String) -> Changed<La
         LambdaExpr::Lambda(s, expr) => {
             let inner = _alpha_reduction(expr, from, to);
             match inner {
-                Changed::Changed(inner_expr) => Changed::Changed(LambdaExpr::Lambda(s.to_string(), Box::new(inner_expr))),
-                Changed::Unchanged(inner_expr) => Changed::Unchanged(LambdaExpr::Lambda(s.to_string(), Box::new(inner_expr)))
+                Changed::Changed(inner_expr) => Changed::Changed(LambdaExpr::Lambda(*s, Box::new(inner_expr))),
+                Changed::Unchanged(inner_expr) => Changed::Unchanged(LambdaExpr::Lambda(*s, Box::new(inner_expr)))
             }
         },
         _ => Changed::Unchanged(e.clone())
@@ -198,7 +205,7 @@ fn beta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
             let display_expr1 = display(&expr1);
             if let LambdaExpr::Lambda(s, expr) = *expr1 {
                 println!("beta reduction {} [{} := {}]", display_expr1, s, display(&expr2));
-                substitute(&expr, &s, &expr2)
+                substitute(&expr, s, &expr2)
             } else {
                 Changed::Unchanged(LambdaExpr::TermApplications(expr1, expr2))
             }
@@ -207,13 +214,13 @@ fn beta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
     }
 }
 
-fn substitute(e : &LambdaExpr, varname : &String, replace : &LambdaExpr) -> Changed<LambdaExpr> {
+fn substitute(e : &LambdaExpr, varname : Symbol, replace : &LambdaExpr) -> Changed<LambdaExpr> {
     match e {
         LambdaExpr::SimpleTerm(s) => {
-            if s == varname {
+            if (*s).clone() == Atom::Term(varname) {
                 Changed::Changed(replace.clone())
             } else {
-                Changed::Unchanged(LambdaExpr::SimpleTerm(s.to_string()))
+                Changed::Unchanged(LambdaExpr::SimpleTerm((*s).clone()))
             }
         },
         LambdaExpr::TermApplications(expr1, expr2) => {
@@ -229,8 +236,8 @@ fn substitute(e : &LambdaExpr, varname : &String, replace : &LambdaExpr) -> Chan
         LambdaExpr::Lambda(s, expr) => {// we trust that variable names are not duplicated
             let subst = substitute(expr, varname, replace);
             match subst {
-                Changed::Changed(expr) => Changed::Changed(LambdaExpr::Lambda(s.to_string(), Box::new(expr))),
-                Changed::Unchanged(expr) => Changed::Unchanged(LambdaExpr::Lambda(s.to_string(), Box::new(expr)))
+                Changed::Changed(expr) => Changed::Changed(LambdaExpr::Lambda(*s, Box::new(expr))),
+                Changed::Unchanged(expr) => Changed::Unchanged(LambdaExpr::Lambda(*s, Box::new(expr)))
             }
         },
         LambdaExpr::LetIn(vec, expr) => {
@@ -258,7 +265,7 @@ fn eta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
                 LambdaExpr::TermApplications(expr1, expr2) => {
                     match &**expr2 {
                         LambdaExpr::SimpleTerm(t) => {
-                            if &s == t && !features_var(expr1, &s) { // Only reduce if expr1 doesn't rely on s
+                            if *t == Atom::Term(s) && !features_var(expr1, s) { // Only reduce if expr1 doesn't rely on s
                                 let display_expr1 = display(&*expr1);
                                 println!("eta reduction (λ{}. {} {}) -> {}", s, display_expr1, s, display_expr1);
                                 Changed::Changed(*expr1.clone())
@@ -277,10 +284,10 @@ fn eta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
     }
 }
 
-fn features_var(e : &LambdaExpr, s : &String) -> bool {
+fn features_var(e : &LambdaExpr, s : Symbol) -> bool {
     // Returns true if `s` shows up as a variable in LambdaExpr
     match e {
-        LambdaExpr::SimpleTerm(t) => s == t,
+        LambdaExpr::SimpleTerm(t) => *t == Atom::Term(s),
         LambdaExpr::TermApplications(expr1, expr2) => features_var(&*expr1, s) || features_var(&*expr2, s),
         LambdaExpr::Lambda(_, expr) => features_var(&*expr, s), // The assumption is that the lambda expr is valid
         LambdaExpr::LetIn(vec, expr) => {
@@ -298,8 +305,9 @@ pub fn display(e : &LambdaExpr) -> String {
             format!("{s1} {s2}")
         },
         LambdaExpr::Lambda(s, expr) => {
+            let s = s.0;
             let expr_s = display(&*expr);
-            format!("(λ{s}. {expr_s})")
+            format!("(λs{s}. {expr_s})")
         },
         LambdaExpr::LetIn(vec, expr) => {
             let expr_s = display(&*expr);

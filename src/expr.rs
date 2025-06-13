@@ -1,5 +1,6 @@
 use crate::lambda::{LambdaExpr};
 use crate::symbols::{Symbol, SymbolTable};
+use std::fmt;
 
 // A file is a list of statements
 #[derive(Debug)]
@@ -31,11 +32,30 @@ pub enum Binop {
     Eq
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Atom {
     Term(Symbol),
     StringLit(String),
     IntLit(u32),
     BoolLit(bool)
+}
+
+impl fmt::Display for Atom {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Write strictly the first element into the supplied output
+        // stream: `f`. Returns `fmt::Result` which indicates whether the
+        // operation succeeded or failed. Note that `write!` uses syntax which
+        // is very similar to `println!`.
+        match self {
+            Atom::Term(s) => write!(f, "s{}", s.0),
+            Atom::StringLit(string) => write!(f, "\"{}\")", string),
+            Atom::IntLit(int) => write!(f, "{}", int),
+            Atom::BoolLit(b) => if *b {
+                write!(f, "true")
+            } else {
+                write!(f, "false")
+            }
+        }
+    }
 }
 
