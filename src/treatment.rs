@@ -81,7 +81,7 @@ pub fn treat_function_definitions<'a>(statements: &Vec<(Vec<Atom>, &'a Expr)>, n
                 }
             }
         }
-        add_expr(&mut pt, &new_args, expr);
+        if let Err(_) = add_expr(&mut pt, &new_args, expr) { return Err(()); }
     }
     Ok((pt, next_symbol))
 }

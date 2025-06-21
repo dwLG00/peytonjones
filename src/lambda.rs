@@ -6,7 +6,7 @@ pub enum LambdaExpr {
     SimpleTerm(Atom),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
     Lambda(Symbol, Box<LambdaExpr>),
-    LetIn(Vec<(String, LambdaExpr)>, Box<LambdaExpr>)
+    LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>)
 }
 
 enum Changed<T> {
@@ -110,7 +110,7 @@ fn _reduce_all(e : LambdaExpr) -> Changed<LambdaExpr> {
                 }
                 
             } else {
-                let new_vec : Changed<Vec<(String, LambdaExpr)>> = lets.into_iter()
+                let new_vec : Changed<Vec<(Symbol, LambdaExpr)>> = lets.into_iter()
                     .map(|(s, e)| _reduce_all(e).flipmerge(s))
                     .collect();
                 let new_expr = _reduce_all(*expr);
@@ -241,8 +241,8 @@ fn substitute(e : &LambdaExpr, varname : Symbol, replace : &LambdaExpr) -> Chang
             }
         },
         LambdaExpr::LetIn(vec, expr) => {
-            let new_vec: Changed<Vec<(String, LambdaExpr)>> = vec.into_iter()
-                .map(|(s, e)| substitute(e, varname, replace).flipmerge(s.to_string()))
+            let new_vec: Changed<Vec<(Symbol, LambdaExpr)>> = vec.into_iter()
+                .map(|(s, e)| substitute(e, varname, replace).flipmerge(*s))
                 .collect();
             let new_expr = substitute(expr, varname, replace);
             match new_vec.combine(new_expr) {
