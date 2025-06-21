@@ -1,10 +1,10 @@
 use crate::lambda::{LambdaExpr};
-use crate::symbols::{Symbol, SymbolTable};
+use crate::symbols::{Symbol, SymbolID, SymbolTable};
 use std::fmt;
 use std::cmp::Ordering;
 
 // A file is a list of statements
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     FuncDef(Symbol, Vec<Atom>, Expr),
     MainDef(Expr) // main function
@@ -33,7 +33,69 @@ pub enum Expr {
     //Where(Box<Expr>, Vec<(Atom, Expr)>)
 }
 
-#[derive(Debug)]
+impl Clone for Expr {
+    fn clone(&self) -> Self {
+        match self {
+            Expr::App(e1, e2) => Expr::App(e1.clone(), e2.clone()),
+            Expr::Binop(binop, e1, e2) => Expr::Binop(*binop, e1.clone(), e2.clone()),
+            Expr::Atom(atom) => Expr::Atom(atom.clone()),
+            Expr::IfElse(e1, e2, e3) => Expr::IfElse(e1.clone(), e2.clone(), e3.clone()),
+            Expr::List(e_vec) => Expr::List(e_vec.iter().map(|e| e.clone()).collect()),
+            Expr::ListCon(e1, e2) => Expr::ListCon(e1.clone(), e2.clone()),
+            Expr::LetIn(s, e) => Expr::LetIn(s.clone(), e.clone())
+        }
+    }
+}
+
+impl Expr {
+    pub fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Self::App(expr1, expr2) => 
+                Self::App(
+                    Box::new(expr1.alpha_subst(old, new)),
+                    Box::new(expr2.alpha_subst(old, new))
+                ),
+            Self::Binop(binop, expr1, expr2) => 
+                Self::Binop(
+                    *binop, 
+                    Box::new(expr1.alpha_subst(old, new)),
+                    Box::new(expr2.alpha_subst(old, new))
+                ),
+            Self::Atom(atom) => match atom {
+                Atom::Term(symbol) => if symbol.0 == old && symbol.1 {
+                    Self::Atom(Atom::Term(Symbol(new, true)))
+                } else {
+                    Self::Atom(atom.clone())
+                },
+                _ => Self::Atom(atom.clone())
+            },
+            Self::IfElse(cond, if_clause, else_clause) => 
+                Self::IfElse(
+                    Box::new(cond.alpha_subst(old, new)),
+                    Box::new(if_clause.alpha_subst(old, new)),
+                    Box::new(else_clause.alpha_subst(old, new))
+                ),
+            Self::List(expr_vec) => Self::List(expr_vec.iter().map(|e| e.alpha_subst(old, new)).collect()),
+            Self::ListCon(expr1, expr2) =>
+                Self::ListCon(
+                    Box::new(expr1.alpha_subst(old, new)),
+                    Box::new(expr2.alpha_subst(old, new))
+                ),
+            Self::LetIn(statement, expr) =>
+                match &**statement {
+                    Statement::FuncDef(symbol, args, statement_expr) =>
+                        Self::LetIn(
+                            Box::new(Statement::FuncDef(*symbol, args.clone(), statement_expr.alpha_subst(old, new))),
+                            Box::new(expr.alpha_subst(old, new))
+                        ),
+                    Statement::MainDef(statement_expr) =>
+                        Self::LetIn(Box::new(Statement::MainDef((*statement_expr).clone())), Box::new(expr.alpha_subst(old, new)))
+                }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Binop {
     Add,
     Sub,
@@ -44,7 +106,7 @@ pub enum Binop {
     Eq
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Atom {
     Term(Symbol),
     StringLit(String),

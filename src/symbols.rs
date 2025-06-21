@@ -1,16 +1,18 @@
 use std::fmt;
 use std::cmp::Ordering;
 
+
+pub type SymbolID = u32;
+pub type SymbolTable = std::collections::HashMap<String, SymbolID>;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Symbol(pub u32); // ident, scope
+pub struct Symbol(pub SymbolID, pub bool); // ident, scope
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "s{}", self.0)
     }
 }
-
-pub type SymbolTable = std::collections::HashMap<String, Symbol>;
 
 pub struct SymbolStack {
     stack : Vec<SymbolTable>,
@@ -35,7 +37,7 @@ impl SymbolStack {
     pub fn get_symbol(&mut self, s: &String) -> Symbol {
         for table in self.stack.iter().rev() {
             match table.get(s) {
-                Some(symbol) => { return symbol.clone(); },
+                Some(i) => { return Symbol{0: *i, 1: true}; },
                 None => {}
             }
         }
@@ -44,9 +46,9 @@ impl SymbolStack {
 
     fn register(&mut self, s: &String) -> Symbol {
         // Register s in the newest symbol table entry
-        let symbol = Symbol{0: self.next_u32 };
         let last_idx = self.stack.len() - 1;
-        self.stack[last_idx].insert(s.clone(), symbol.clone());
+        self.stack[last_idx].insert(s.clone(), self.next_u32);
+        let symbol = Symbol{0: self.next_u32, 1: false};
         self.next_u32 += 1;
         symbol
     }

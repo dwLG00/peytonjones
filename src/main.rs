@@ -5,6 +5,7 @@ mod tokens;
 mod lex;
 mod parse;
 mod translate;
+mod treatment;
 use crate::lambda::{LambdaExpr, display, reduce_all};
 use crate::lex::{lex};
 use crate::parse::{parse};
