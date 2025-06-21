@@ -1,9 +1,11 @@
+use std::fmt;
+use std::cmp::Ordering;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Symbol(pub u32); // ident, scope
 
-impl std::fmt::Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "s{}", self.0)
     }
 }
@@ -17,7 +19,7 @@ pub struct SymbolStack {
 
 impl SymbolStack {
     pub fn new() -> SymbolStack {
-        SymbolStack { stack:  vec![SymbolTable::new()], next_u32: 0 }
+        SymbolStack { stack:  vec![SymbolTable::new()], next_u32: 1 } // reserve 0 for main function
     }
 
     pub fn contains(&self, s: &String) -> bool {

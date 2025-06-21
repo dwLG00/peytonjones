@@ -1,12 +1,24 @@
 use crate::lambda::{LambdaExpr};
 use crate::symbols::{Symbol, SymbolTable};
 use std::fmt;
+use std::cmp::Ordering;
 
 // A file is a list of statements
 #[derive(Debug)]
 pub enum Statement {
     FuncDef(Symbol, Vec<Atom>, Expr),
     MainDef(Expr) // main function
+}
+
+impl Statement {
+    pub fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::MainDef(_), Self::MainDef(_)) => Ordering::Equal,
+            (Self::MainDef(_), Self::FuncDef(_, _, _)) => Ordering::Greater,
+            (Self::FuncDef(_, _, _), Self::MainDef(_)) => Ordering::Less,
+            (Self::FuncDef(s1, _, _), Self::FuncDef(s2, _, _)) => s1.cmp(s2)
+        }
+    }
 }
 
 #[derive(Debug)]
