@@ -1,0 +1,26 @@
+I just changed function definitions to use `Arg` enums instead of `Atom`s which screwed up `translat` (and specifically `treatment`) because they were written with the old definition in mind.
+
+The way translate works rn is by taking a big vector of statements, 1) grouping them by which function they are defining, 2) per each function definition, building a tree of arguments (see fig 1), then passing that to the main translation engine to put it in enriched lambda calculus form (use the book for this; in progress).
+
+fig 1. {
+    The following code:
+
+    myFunc a 1 true = expr1
+    myFunc a 2 false = expr2
+    myFunc a b c = expr3
+
+    becomes:
+
+    a -[unbound]- b -1--------- c -true------ expr1
+                    |             \[unbound]- let b = 1 in expr3
+                    \2--------- c -false----- expr2
+                    |             \[unbound]- let b = 2 in expr3
+                    \[unbound]- c -[unbound]- expr3
+}
+
+The issue is when list arguments are introduced, because you can get function definitions that look like `myFunc a b [c:cs] = blah`.
+
+Actions:
+1) Read the book and see how this is handled (should be in the pattern matching section)
+2) Figure out argument tree construction
+3) Finish lambda calculus construction
