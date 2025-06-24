@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 // A file is a list of statements
 #[derive(Debug, Clone)]
 pub enum Statement {
-    FuncDef(Symbol, Vec<Atom>, Expr),
+    FuncDef(Symbol, Vec<Arg>, Expr),
     MainDef(Expr) // main function
 }
 
@@ -112,6 +112,13 @@ pub enum Atom {
     StringLit(String),
     IntLit(u32),
     BoolLit(bool)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Arg {
+    Atom(Atom),
+    ListCon(Box<Arg>, Box<Arg>),
+    List(Vec<Arg>)
 }
 
 impl fmt::Display for Atom {

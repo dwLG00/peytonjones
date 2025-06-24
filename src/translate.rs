@@ -7,6 +7,7 @@ use crate::expr::*;
 use crate::symbols::*;
 use crate::treatment::{treat_function_definitions, PatternTree};
 
+/*
 pub fn translate(statements: Vec<Statement>, next_symbol: SymbolID) -> Result<Vec<(SymbolID, LambdaExpr)>, ()> {
     let mut v: Vec<(SymbolID, LambdaExpr)> = Vec::new();
 
@@ -36,9 +37,9 @@ pub fn translate(statements: Vec<Statement>, next_symbol: SymbolID) -> Result<Ve
     Ok(v)
 }
 
-pub fn create_function_map<'a>(statements: &'a Vec<Statement>) -> Result<HashMap<Symbol, Vec<(Vec<Atom>, &'a Expr)>>, ()> {
+pub fn create_function_map<'a>(statements: &'a Vec<Statement>) -> Result<HashMap<Symbol, Vec<(Vec<Arg>, &'a Expr)>>, ()> {
     // Create a hashmap of function name => vector of function definitions
-    let mut hm = HashMap::<Symbol, Vec<(Vec<Atom>, &Expr)>>::new();
+    let mut hm = HashMap::<Symbol, Vec<(Vec<Arg>, &Expr)>>::new();
     for statement in statements.iter() {
         match statement {
             Statement::MainDef(expr) => {
@@ -67,3 +68,4 @@ pub fn build_lambda_expr(symbol_id: SymbolID, pt: PatternTree) -> LambdaExpr {
 pub fn translate_expr(expr: Expr) -> LambdaExpr {
     todo!();
 }
+*/

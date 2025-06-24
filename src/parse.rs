@@ -1,13 +1,13 @@
 use std::iter::Peekable;
 
-use crate::expr::{Statement, Expr, Atom, Binop};
+use crate::expr::{Statement, Expr, Atom, Arg, Binop};
 use crate::symbols::{Symbol, SymbolStack};
 use crate::tokens::{Token};
 
 /*
 Grammar:
 
-STATEMENT :=    TERM {ATOM} = EXPR NEWLINE
+STATEMENT :=    TERM {ARG} = EXPR NEWLINE
 
 EXPR :=         ATOM
 |               LIST
@@ -25,6 +25,12 @@ ATOM :=         TERM
 |               STR_LITERAL
 |               NUM_LITERAL
 |               BOOL_LITERAL
+
+ARG :=          ATOM
+|               [ ]
+|               [ ARG : ARG ]
+|               [ ARG {, ARG}* ]
+
 
 BINOP :=        + | - | * | / | < | >
 */
@@ -70,12 +76,11 @@ pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, String> {
 fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Statement, String> 
     where I: Iterator<Item=(usize, &'a Token)>
 {
-    // match Term
+    // Peek to clear the "main" case (no arguments)
     match it.peek() {
         None => { return Err(format!("[parse_statemet] @End, Hit EOF")); },
         Some((idx, token)) => match token {
             Token::Term(t) => if t == "main" {
-                // match main instead
                 it.next();
                 let idx = grab_index(it);
                 match parse_eq_weak(it) {
@@ -101,6 +106,7 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
         Ok(symbol) => {
             // match 0 or more Atoms
             ss.push_stack();
+            /*
             let mut atoms = Vec::new();
             loop {
                 let expect_atom = parse_atom_weak(it, ss);
@@ -117,6 +123,8 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
                     }
                 }
             }
+            */
+            let args = parse_args(it, ss)?;
             let idx = grab_index(it); // For debugging
             // match eq
             match parse_eq_weak(it) {
@@ -129,7 +137,7 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
             let expect_expr = parse_expr_greedy(it, ss, ExprContext::None);
             ss.pop_stack();
             match expect_expr {
-                Ok(expr) => Ok(Statement::FuncDef(symbol, atoms, expr)),
+                Ok(expr) => Ok(Statement::FuncDef(symbol, args, expr)),
                 Err(e) => Err(e)
             }
         }
@@ -415,6 +423,142 @@ fn parse_eq_weak<'a, I>(it: &mut Peekable<I>) -> Result<(), Option<Token>>
                 Ok(())
             },
             t => Err(Some((**t).clone()))
+        }
+    }
+}
+
+fn parse_arg_weakish<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Result<Arg, Option<Token>>, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    match parse_atom_weak(it, ss) {
+        Ok(a) => Ok(Ok(Arg::Atom(a))),
+        Err(maybe_token) => {
+            match maybe_token {
+                Some(token) => {
+                    match token {
+                        Token::LBracket => {
+                            it.next();
+                            match parse_arg_list(it, ss) {
+                                Ok(arg) => Ok(Ok(arg)),
+                                Err(s) => { return Err(s); }
+                            }
+                        },
+                        _ => { return Ok(Err(Some(token))); }
+                    }
+                },
+                None => { return Ok(Err(None)); }
+            }
+        }
+    }
+}
+
+fn parse_arg<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Arg, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    let idx = grab_index(it);
+    match parse_arg_weakish(it, ss) {
+        Ok(maybe_success) => match maybe_success {
+            Ok(arg) => Ok(arg),
+            Err(err) => match err {
+                Some(t) => Err(format!("[parse_arg_list] @{}, Expected argument, found `{:?}` instead", idx, t)),
+                None => Err(format!("[parse_arg_list] @End, Hit EOF"))
+            }
+        },
+        Err(s) => Err(s)
+    }
+}
+
+fn parse_args<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Vec<Arg>, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    let mut args: Vec<Arg> = Vec::new();
+    // Try to parse atom (weak)
+    loop {
+        match parse_arg_weakish(it, ss) {
+            Ok(no_list_fail) => match no_list_fail {
+                Ok(arg) => { args.push(arg); },
+                Err(maybe_token) => match maybe_token {
+                    Some(tok) => { return Ok(args); },
+                    None => { return Err(format!("[parse_args] @End, Hit EOF")); }
+                }
+            },
+            Err(s) => { return Err(s); }
+        }
+    }
+}
+
+fn parse_arg_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Arg, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    match it.peek() {
+        None => Err(format!("[parse_arg_list] @End, Hit EOF")),
+        Some((idx, token)) => match token {
+            Token::RBracket => { // Empty list
+                Ok(Arg::List(Vec::new()))
+            },
+            _ => { // Parse as an arg
+                let arg1 = parse_arg(it, ss)?;
+                skip_newlines(it)?;
+                match it.next() {
+                    None => Err(format!("[parse_arg_list] @End, Hit EOF")),
+                    Some((idx, token)) => match token {
+                        Token::Colon => { // car : cdr ]
+                            skip_newlines(it)?;
+                            let arg2 = parse_arg(it, ss)?;
+                            let expect_rbracket = skip_newlines(it)?;
+                            match expect_rbracket {
+                                Token::RBArrow => {
+                                    it.next();
+                                    Ok(Arg::ListCon(Box::new(arg1), Box::new(arg2)))
+                                },
+                                t => Err(format!("[parse_arg_list] @{}, Expected `]`, found `{:?}` instead", idx, t))
+                            }
+                        },
+                        Token::Comma => {
+                            let mut v: Vec<Arg> = vec![arg1];
+                            skip_newlines(it)?;
+                            let next_arg = parse_arg(it, ss)?;
+                            v.push(next_arg);
+                            let token = skip_newlines(it)?;
+                            let idx2 = grab_index(it);
+                            match token {
+                                Token::RBracket => {
+                                    it.next();
+                                    Ok(Arg::List(v))
+                                },
+                                Token::Comma => {
+                                    loop {
+                                        let idx3 = grab_index(it);
+                                        match parse_exact_token(it, Token::Comma) {
+                                            Ok(()) => {},
+                                            Err(e) => match e {
+                                                None => { return Err(format!("[parse_arg_list] @End, Expected ','; found EOF instead")); },
+                                                Some(t) => { return Err(format!("[parse_arg_list] @{}, Expected `,`; found `{:?}` instead", idx3, t)); }
+                                            }
+                                        }
+                                        skip_newlines(it)?;
+                                        v.push(parse_arg(it, ss)?);
+                                        let maybe_rb = skip_newlines(it)?;
+                                        let idx3 = grab_index(it);
+                                        match maybe_rb {
+                                            Token::RBracket => { break; },
+                                            Token::Comma => {}, // do nothing; onto the next loop
+                                            t => { return Err(format!("[parse_arg_list] @{}, Expected `]` or `,`; found `{:?}` instead", idx3, t)); } // Unexpected...
+                                        }
+                                    }
+                                    it.next();
+                                    Ok(Arg::List(v))
+                                },
+                                t => Err(format!("[parse_arg_list] @{}, Expected `]` or `,`; found `{:?}` instead", idx2, t))
+                            }
+                        },
+                        Token::RBracket => {
+                            Ok(Arg::List(vec![arg1]))
+                        },
+                        t => Err(format!("[parse_arg_list] @{}, Expected `]` or `,` or `:`; found {:?} instead", idx, t))
+                    }
+                }
+            }
         }
     }
 }
