@@ -1,4 +1,6 @@
-use crate::{expr::Atom, symbols::Symbol};
+use std::{collections::HashMap, hash::Hash};
+
+use crate::{expr::Atom, lambda, symbols::{Symbol, SymbolID}};
 
 
 #[derive(Clone)]
@@ -6,7 +8,8 @@ pub enum LambdaExpr {
     SimpleTerm(Atom),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
     Lambda(Symbol, Box<LambdaExpr>),
-    LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>)
+    LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
+    CaseOf(Symbol, HashMap<Atom, LambdaExpr>)
 }
 
 enum Changed<T> {
@@ -125,6 +128,31 @@ fn _reduce_all(e : LambdaExpr) -> Changed<LambdaExpr> {
                     }
                 }
             }
+        },
+        LambdaExpr::CaseOf(s, hm) => {
+            let mut new_hm = HashMap::<Atom, LambdaExpr>::new();
+            let mut has_changed = false;
+
+            for key in hm.keys() {
+                let lambda_expr = hm.get(key);
+                match lambda_expr {
+                    Some(lambda_expr) => match _reduce_all(lambda_expr.clone()) {
+                        Changed::Changed(new_lambda_expr) => {
+                            has_changed = true;
+                            new_hm.insert(key.clone(), new_lambda_expr);
+                        },
+                        Changed::Unchanged(new_lambda_expr) => {
+                            new_hm.insert(key.clone(), new_lambda_expr);
+                        }
+                    },
+                    None => {}
+                }
+            }
+            if has_changed {
+                Changed::Changed(LambdaExpr::CaseOf(s, new_hm))
+            } else {
+                Changed::Unchanged(LambdaExpr::CaseOf(s, new_hm))
+            }
         }
     }
 }
@@ -205,7 +233,7 @@ fn beta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
             let display_expr1 = display(&expr1);
             if let LambdaExpr::Lambda(s, expr) = *expr1 {
                 println!("beta reduction {} [{} := {}]", display_expr1, s, display(&expr2));
-                substitute(&expr, s, &expr2)
+                substitute(&expr, s.0, &expr2)
             } else {
                 Changed::Unchanged(LambdaExpr::TermApplications(expr1, expr2))
             }
@@ -214,11 +242,15 @@ fn beta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
     }
 }
 
-fn substitute(e : &LambdaExpr, varname : Symbol, replace : &LambdaExpr) -> Changed<LambdaExpr> {
+fn substitute(e : &LambdaExpr, varname : SymbolID, replace : &LambdaExpr) -> Changed<LambdaExpr> {
     match e {
         LambdaExpr::SimpleTerm(s) => {
-            if (*s).clone() == Atom::Term(varname) {
-                Changed::Changed(replace.clone())
+            if let Atom::Term(s_) = s {
+                if s_.0 == varname {
+                    Changed::Changed(replace.clone())
+                } else {
+                    Changed::Unchanged(LambdaExpr::SimpleTerm((*s).clone()))
+                }
             } else {
                 Changed::Unchanged(LambdaExpr::SimpleTerm((*s).clone()))
             }
@@ -253,6 +285,14 @@ fn substitute(e : &LambdaExpr, varname : Symbol, replace : &LambdaExpr) -> Chang
                     Changed::Unchanged(LambdaExpr::LetIn(new_vec_, Box::new(new_expr_)))
                 }
             }
+        },
+        LambdaExpr::CaseOf(s, hm) => {
+            if s.0 == varname {
+                todo!();
+            } else {
+                let mut new_hm = HashMap::<Atom, LambdaExpr>::new();
+                todo!();
+            }
         }
     }
 }
@@ -265,8 +305,8 @@ fn eta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
                 LambdaExpr::TermApplications(expr1, expr2) => {
                     match &**expr2 {
                         LambdaExpr::SimpleTerm(t) => {
-                            if *t == Atom::Term(s) && !features_var(expr1, s) { // Only reduce if expr1 doesn't rely on s
-                                let display_expr1 = display(&*expr1);
+                            if *t == Atom::Term(s) && !features_var(expr1, s.0) { // Only reduce if expr1 doesn't rely on s
+                                let display_expr1 = display(expr1);
                                 println!("eta reduction (λ{}. {} {}) -> {}", s, display_expr1, s, display_expr1);
                                 Changed::Changed(*expr1.clone())
                             } else {
@@ -284,14 +324,25 @@ fn eta_reduction(e : LambdaExpr) -> Changed<LambdaExpr> {
     }
 }
 
-fn features_var(e : &LambdaExpr, s : Symbol) -> bool {
+fn atom_is_symbol(a: &Atom, s: SymbolID) -> bool {
+    if let Atom::Term(s_) = a {
+        s_.0 == s
+    } else {
+        false
+    }
+}
+
+fn features_var(e : &LambdaExpr, s : SymbolID) -> bool {
     // Returns true if `s` shows up as a variable in LambdaExpr
     match e {
-        LambdaExpr::SimpleTerm(t) => *t == Atom::Term(s),
-        LambdaExpr::TermApplications(expr1, expr2) => features_var(&*expr1, s) || features_var(&*expr2, s),
-        LambdaExpr::Lambda(_, expr) => features_var(&*expr, s), // The assumption is that the lambda expr is valid
+        LambdaExpr::SimpleTerm(t) => atom_is_symbol(t, s),
+        LambdaExpr::TermApplications(expr1, expr2) => features_var(expr1, s) || features_var(expr2, s),
+        LambdaExpr::Lambda(_, expr) => features_var(expr, s), // The assumption is that the lambda expr is valid
         LambdaExpr::LetIn(vec, expr) => {
-            vec.into_iter().any(|(_, e)| features_var(&*e, s)) || features_var(&*expr, s)
+            vec.into_iter().any(|(_, e)| features_var(e, s)) || features_var(expr, s)
+        },
+        LambdaExpr::CaseOf(s_, hm) => {
+            s_.0 == s || hm.iter().any(|(key, val)| atom_is_symbol(key, s) || features_var(val, s))
         }
     }
 }
@@ -300,20 +351,25 @@ pub fn display(e : &LambdaExpr) -> String {
     match e {
         LambdaExpr::SimpleTerm(s) => s.to_string(),
         LambdaExpr::TermApplications(expr1, expr2) => {
-            let s1 = display(&*expr1);
-            let s2 = display(&*expr2);
+            let s1 = display(expr1);
+            let s2 = display(expr2);
             format!("{s1} {s2}")
         },
         LambdaExpr::Lambda(s, expr) => {
             let s = s.0;
-            let expr_s = display(&*expr);
+            let expr_s = display(expr);
             format!("(λs{s}. {expr_s})")
         },
         LambdaExpr::LetIn(vec, expr) => {
-            let expr_s = display(&*expr);
-            let vec_s = vec.iter().map(|(s, e)| format!("{} := {},", s, display(&*e))).collect::<String>();
+            let expr_s = display(expr);
+            let vec_s = vec.iter().map(|(s, e)| format!("{} := {},", s, display(e))).collect::<String>();
             let vec_s = vec_s.trim_end_matches(",");
             format!("(let {} in {})", vec_s, expr_s)
+        },
+        LambdaExpr::CaseOf(s, hm) => {
+            let vec_s = hm.iter().map(|(key, val)| format!("({} => {}),", key.to_string(), display(val))).collect::<String>();
+            let vec_s = vec_s.trim_end_matches(",");
+            format!("(case {}: {})", s.0.to_string(), vec_s)
         }
     }
 }

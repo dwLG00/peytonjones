@@ -63,3 +63,7 @@ pub fn create_function_map<'a>(statements: &'a Vec<Statement>) -> Result<HashMap
 pub fn build_lambda_expr(symbol_id: SymbolID, pt: PatternTree) -> LambdaExpr {
     todo!();
 }
+
+pub fn translate_expr(expr: Expr) -> LambdaExpr {
+    todo!();
+}
