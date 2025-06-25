@@ -132,7 +132,16 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
 }
 
 fn match_reduce_empty(m: &Match) -> Result<LambdaExpr, String> {
-    todo!()
+    if m.arity > 0 {
+        return Err(format!("[match_reduce_empty] Expected Match with arity 0, found arity {}", m.arity));
+    } else {
+        let failcase = match &m.if_fail {
+            Some(e) => expr_to_lambda(&e),
+            None => LambdaExpr::FAIL
+        };
+        let lambda_expr = m.body.iter().rev().fold(failcase, |acc, (_, e)| LambdaExpr::TryThen(Box::new(expr_to_lambda(e)), Box::new(acc)));
+        Ok(lambda_expr)
+    }
 }
 
 fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
@@ -262,7 +271,30 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
 }
 
 fn expr_to_lambda(e: &Expr) -> LambdaExpr {
-    todo!()
+    match e {
+        Expr::App(e1, e2) => LambdaExpr::TermApplications(Box::new(expr_to_lambda(e1)), Box::new(expr_to_lambda(e2))),
+        Expr::Binop(b, e1, e2) => LambdaExpr::TermApplications(
+            Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::BinopTerm(*b)), Box::new(expr_to_lambda(e1)))), 
+            Box::new(expr_to_lambda(e2))
+        ),
+        Expr::Atom(a) => LambdaExpr::SimpleTerm(a.clone()),
+        Expr::IfElse(e1, e2, e3) => LambdaExpr::IfElse(
+            Box::new(expr_to_lambda(e1)),
+            Box::new(expr_to_lambda(e2)),
+            Box::new(expr_to_lambda(e3))
+        ),
+        Expr::List(v) => if v.len() == 0 {
+            LambdaExpr::EmptyList
+        } else {
+            fold_lambda_list(v.iter().rev().map(|e| expr_to_lambda(e)))
+        },
+        Expr::ListCon(e1, e2) => LambdaExpr::ListCon(Box::new(expr_to_lambda(e1)), Box::new(expr_to_lambda(e2))),
+        Expr::LetIn(s, e) => todo!()
+    }
+}
+
+fn fold_lambda_list(it: impl Iterator<Item=LambdaExpr>) -> LambdaExpr {
+    it.fold(LambdaExpr::EmptyList, |acc, x| LambdaExpr::ListCon(Box::new(x), Box::new(acc)))
 }
 
 fn retain<T>(v: &mut Vec<T>, retain_idx: &Vec<bool>) {

@@ -1,17 +1,23 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use crate::expr::{Atom, Arg};
+use crate::expr::{Atom, Arg, Binop};
 use crate::symbols::{Symbol, SymbolID};
 
 
 #[derive(Clone)]
 pub enum LambdaExpr {
     SimpleTerm(Atom),
+    BinopTerm(Binop),
+    EmptyList,
+    ListCon(Box<LambdaExpr>, Box<LambdaExpr>),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
     Lambda(Symbol, Box<LambdaExpr>),
     LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
-    CaseOf(Symbol, HashMap<Arg, LambdaExpr>)
+    CaseOf(Symbol, HashMap<Arg, LambdaExpr>),
+    IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
+    TryThen(Box<LambdaExpr>, Box<LambdaExpr>),
+    FAIL
 }
 
 enum Changed<T> {
@@ -67,6 +73,8 @@ impl<T> std::iter::FromIterator<Changed<T>> for Changed<Vec<T>> {
         }
     }
 }
+
+/*
 
 pub fn reduce_all(e : LambdaExpr) -> LambdaExpr {
     match _reduce_all(e) {
@@ -383,3 +391,4 @@ pub fn display(e : &LambdaExpr) -> String {
         }
     }
 }
+*/
