@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Lexed tokens: {:?}", toks);
             let parse_result = parse(toks);
             match parse_result {
-                Ok(statements) => {
+                Ok((statements, _)) => {
                     for (i, statement) in statements.iter().enumerate() {
                         println!("[{}] {:?}", i, statement);
                     }

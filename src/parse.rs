@@ -55,7 +55,7 @@ const RESERVED_TERMS: [&'static str; 6] = [
     "main"
 ];
 
-pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, String> {
+pub fn parse(tokens : Vec<Token>) -> Result<(Vec<Statement>, SymbolStack), String> {
     let mut statements : Vec<Statement> = Vec::new();
     let mut symbol_stack = SymbolStack::new();
     let mut it = tokens.iter().enumerate().peekable();
@@ -70,7 +70,7 @@ pub fn parse(tokens : Vec<Token>) -> Result<Vec<Statement>, String> {
             Err(e) => { return Err(e); }
         }
     }
-    Ok(statements)
+    Ok((statements, symbol_stack))
 }
 
 fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Statement, String> 
