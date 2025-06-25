@@ -24,3 +24,41 @@ Actions:
 1) Read the book and see how this is handled (should be in the pattern matching section)
 2) Figure out argument tree construction
 3) Finish lambda calculus construction
+
+---
+
+fig 2. {
+    myFunc a 1 true = expr1
+    myFunc a 2 false = expr2
+    myFunc a b c = expr3
+
+    -match representation->
+
+    lambda v1, v2, v3 = match [v1, v2, v3]
+        - [a, 1, true] => expr1
+        - [a, 2, false] => expr2
+        - [a, b, c] => expr3
+
+    -variable rule->
+
+    lambda v1, v2, v3 = match [v2, v3]
+        - [1, true] => expr1[v1/a]
+        - [2, false] => expr2[v1/a]
+        - [b, c] => expr3[v1/a]
+    
+    -constructor rule->
+
+    lambda v1, v2, v3 = 
+        case v2 {
+            1 => match [v3]
+                - [true] => expr1[v1/a]
+                - [c] => expr3[v1/a][v2/b],
+            2 => match [v3]
+                - [false] => expr2[v1/a]
+                - [c] => expr3[v1/a][v2/b],
+            b => match [v3]
+                - [c] => expr3[v1/a][v2/b]
+        }
+
+    from here we'll reduce each sub-match separately
+}

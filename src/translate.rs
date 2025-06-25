@@ -70,6 +70,7 @@ pub fn translate_expr(expr: Expr) -> LambdaExpr {
 }
 */
 
+#[derive(Clone)]
 struct Match {
     arity: usize,
     args: Vec<SymbolID>,
@@ -130,7 +131,137 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
     Ok(())
 }
 
-fn match_reduce_constructor(m: &Match) -> Result<LambdaExpr, String> {
+fn match_reduce_empty(m: &Match) -> Result<LambdaExpr, String> {
+    todo!()
+}
+
+fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
+    if m.arity == 0 {
+        match_reduce_empty(m)
+    } else {
+        let car = m.args[0];
+        let cdr = m.args[1..].to_vec();
+        // build temp hashmap; then we can use this to build the lambda expression hashmap
+        let mut temp_hm: HashMap<Arg, Vec<(Vec<Arg>, Expr)>> = HashMap::new();
+        // parts for resolving list constructor
+        let car_symbol = ss.grab();
+        let cdr_symbol = ss.grab();
+        let mut list_vec: Vec<(Vec<Arg>, Expr)> = Vec::with_capacity(m.body.len());
+        // parts for resolving variable
+        let var_symbol = ss.grab();
+        let mut var_vec: Vec<(Vec<Arg>, Expr)> = Vec::with_capacity(m.body.len());
+
+        for (args, e) in m.body.iter() {
+            match &args[0] {
+                Arg::Atom(a) => match a {
+                    Atom::Term(s) => { // It's a variable!
+                        if s.1 { // Bounded variable (i.e. some other value)
+                            match temp_hm.get_mut(&args[0]) {
+                                Some(v) => v.push((args[1..].to_vec(), e.clone())),
+                                None => {
+                                    temp_hm.insert(
+                                        args[0].clone(),
+                                        vec![(args[1..].to_vec(), e.clone())]
+                                    );
+                                }
+                            }
+                        } else { // Unbound variable
+                            var_vec.push((args[1..].to_vec(), e.alpha_subst(s.0, var_symbol)));
+                        }
+                    },
+                    _ => { // Non-variable
+                        match temp_hm.get_mut(&args[0]) {
+                            Some(v) => v.push((args[1..].to_vec(), e.clone())),
+                            None => {
+                                temp_hm.insert(
+                                    args[0].clone(),
+                                    vec![(args[1..].to_vec(), e.clone())]
+                                );
+                            }
+                        }
+                    }
+                },
+                Arg::EmptyList => {
+                    match temp_hm.get_mut(&args[0]) {
+                        Some(v) => v.push((args[1..].to_vec(), e.clone())),
+                        None => {
+                            temp_hm.insert(
+                                args[0].clone(),
+                                vec![(args[1..].to_vec(), e.clone())]
+                            );
+                        }
+                    }
+                },
+                Arg::ListCon(car_, cdr_) => {
+                    if car_.like_var() { // Contains an unbounded variable
+                        if let Arg::Atom(_) = **car_ {
+                            // Ignore if car is a plain variable
+                        } else {
+                            return Err(format!("[match_reduce] Found list with unbound variable as car of list"))
+                        }
+                    }
+                    let auged_args: Vec<Arg> = [*car_.clone(), *cdr_.clone()].iter().chain(args[1..].iter()).map(|arg| (*arg).clone()).collect();
+                    let new_e = {
+                        let mut e = e.clone();
+                        if let Arg::Atom(Atom::Term(s)) = **car_ {
+                            if !s.1 {
+                                e = e.alpha_subst(s.0, car_symbol);
+                            }
+                        }
+                        if let Arg::Atom(Atom::Term(s)) = **cdr_ {
+                            if !s.1 {
+                                e = e.alpha_subst(s.0, cdr_symbol);
+                            }
+                        }
+                        e
+                    };
+                    list_vec.push((auged_args, new_e));
+                }
+            }
+        }
+
+        let mut hm: HashMap<Arg, LambdaExpr> = HashMap::new();
+        for (arg, list) in temp_hm.into_iter() {
+            let new_m = Match {
+                arity: m.arity - 1,
+                args: cdr.clone(),
+                body: list,
+                if_fail: None
+            };
+            let lambda_expr = match_reduce(&new_m, ss)?;
+            hm.insert(arg, lambda_expr);
+        }
+        if list_vec.len() > 0 { // We have list args
+            let new_m = Match {
+                arity: m.arity + 1, // Lose 1 arg, gain 2 (from car and cdr)
+                args: [car_symbol, cdr_symbol].iter().chain(m.args[1..].iter()).map(|a| *a).collect(),
+                body: list_vec,
+                if_fail: None
+            };
+            let lambda_expr = match_reduce(&new_m, ss)?;
+            hm.insert(
+                Arg::ListCon(
+                    Box::new(Arg::Atom(Atom::Term(Symbol(car_symbol, false)))),
+                    Box::new(Arg::Atom(Atom::Term(Symbol(cdr_symbol, false))))
+                ),
+                lambda_expr
+            );
+        }
+        if var_vec.len() > 0 {
+            let new_m = Match {
+                arity: m.arity - 1,
+                args: cdr.clone(),
+                body: var_vec,
+                if_fail: None
+            };
+            let lambda_expr = match_reduce(&new_m, ss)?;
+            hm.insert(Arg::Atom(Atom::Term(Symbol(var_symbol, false))), lambda_expr);
+        }
+        Ok(LambdaExpr::CaseOf(Symbol(car, false), hm))
+    }
+}
+
+fn expr_to_lambda(e: &Expr) -> LambdaExpr {
     todo!()
 }
 

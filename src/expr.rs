@@ -116,10 +116,6 @@ pub enum Atom {
 
 impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Write strictly the first element into the supplied output
-        // stream: `f`. Returns `fmt::Result` which indicates whether the
-        // operation succeeded or failed. Note that `write!` uses syntax which
-        // is very similar to `println!`.
         match self {
             Atom::Term(s) => write!(f, "s{}", s.0),
             Atom::StringLit(string) => write!(f, "\"{}\")", string),
@@ -145,7 +141,7 @@ impl Arg {
     pub fn is_var(&self) -> bool {
         match self {
             Arg::Atom(a) => match a {
-                Atom::Term(_) => true,
+                Atom::Term(s) => !s.1,
                 _ => false
             }
             _ => false
@@ -156,12 +152,21 @@ impl Arg {
         // Weaker than is_var, counting cases where variables are in lists
         match self {
             Arg::Atom(a) => match a {
-                Atom::Term(_) => true,
+                Atom::Term(s) => !s.1, // Unbound variable (i.e. not previously defined)
                 _ => false
             },
             Arg::ListCon(arg1, arg2) => arg1.like_var() || arg2.like_var(),
-            //Arg::List(args) => args.iter().any(|arg| arg.like_var())
             Arg::EmptyList => false
+        }
+    }
+}
+
+impl fmt::Display for Arg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Arg::Atom(a) => a.fmt(f),
+            Arg::ListCon(car, cdr) => write!(f, "{} : {}", car.to_string(), cdr.to_string()),
+            Arg::EmptyList => write!(f, "[]")
         }
     }
 }

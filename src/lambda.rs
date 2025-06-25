@@ -1,6 +1,8 @@
-use std::{collections::HashMap, hash::Hash};
+use std::collections::HashMap;
+use std::hash::Hash;
 
-use crate::{expr::Atom, lambda, symbols::{Symbol, SymbolID}};
+use crate::expr::{Atom, Arg};
+use crate::symbols::{Symbol, SymbolID};
 
 
 #[derive(Clone)]
@@ -9,7 +11,7 @@ pub enum LambdaExpr {
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
     Lambda(Symbol, Box<LambdaExpr>),
     LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
-    CaseOf(Symbol, HashMap<Atom, LambdaExpr>)
+    CaseOf(Symbol, HashMap<Arg, LambdaExpr>)
 }
 
 enum Changed<T> {
@@ -130,7 +132,7 @@ fn _reduce_all(e : LambdaExpr) -> Changed<LambdaExpr> {
             }
         },
         LambdaExpr::CaseOf(s, hm) => {
-            let mut new_hm = HashMap::<Atom, LambdaExpr>::new();
+            let mut new_hm = HashMap::<Arg, LambdaExpr>::new();
             let mut has_changed = false;
 
             for key in hm.keys() {
@@ -332,6 +334,14 @@ fn atom_is_symbol(a: &Atom, s: SymbolID) -> bool {
     }
 }
 
+fn arg_is_symbol(a: &Arg, s: SymbolID) -> bool {
+    if let Arg::Atom(a) = a {
+        atom_is_symbol(a, s)
+    } else {
+        false
+    }
+}
+
 fn features_var(e : &LambdaExpr, s : SymbolID) -> bool {
     // Returns true if `s` shows up as a variable in LambdaExpr
     match e {
@@ -342,7 +352,7 @@ fn features_var(e : &LambdaExpr, s : SymbolID) -> bool {
             vec.into_iter().any(|(_, e)| features_var(e, s)) || features_var(expr, s)
         },
         LambdaExpr::CaseOf(s_, hm) => {
-            s_.0 == s || hm.iter().any(|(key, val)| atom_is_symbol(key, s) || features_var(val, s))
+            s_.0 == s || hm.iter().any(|(key, val)| arg_is_symbol(key, s) || features_var(val, s))
         }
     }
 }
