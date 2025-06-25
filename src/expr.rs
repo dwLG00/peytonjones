@@ -137,7 +137,8 @@ impl fmt::Display for Atom {
 pub enum Arg {
     Atom(Atom),
     ListCon(Box<Arg>, Box<Arg>),
-    List(Vec<Arg>)
+    EmptyList
+    //List(Vec<Arg>)
 }
 
 impl Arg {
@@ -159,7 +160,8 @@ impl Arg {
                 _ => false
             },
             Arg::ListCon(arg1, arg2) => arg1.like_var() || arg2.like_var(),
-            Arg::List(args) => args.iter().any(|arg| arg.like_var())
+            //Arg::List(args) => args.iter().any(|arg| arg.like_var())
+            Arg::EmptyList => false
         }
     }
 }

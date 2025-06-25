@@ -73,7 +73,8 @@ pub fn translate_expr(expr: Expr) -> LambdaExpr {
 struct Match {
     arity: usize,
     args: Vec<SymbolID>,
-    body: Vec<(Vec<Arg>, Expr)>
+    body: Vec<(Vec<Arg>, Expr)>,
+    if_fail: Option<Expr>
 }
 
 fn fundef_to_match(fundefs: &Vec<Statement>, arity: usize, ss: &mut SymbolStack) -> Result<Match, String> {
@@ -97,7 +98,8 @@ fn fundef_to_match(fundefs: &Vec<Statement>, arity: usize, ss: &mut SymbolStack)
     Ok(Match {
         arity: arity,
         args: args,
-        body: body
+        body: body,
+        if_fail: None
     })
 }
 
@@ -126,6 +128,10 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
         retain(arg, &retain_idx);
     }
     Ok(())
+}
+
+fn match_reduce_constructor(m: &Match) -> Result<LambdaExpr, String> {
+    todo!()
 }
 
 fn retain<T>(v: &mut Vec<T>, retain_idx: &Vec<bool>) {

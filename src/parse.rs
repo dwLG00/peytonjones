@@ -478,7 +478,7 @@ fn parse_args<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Vec<A
             Ok(no_list_fail) => match no_list_fail {
                 Ok(arg) => { args.push(arg); },
                 Err(maybe_token) => match maybe_token {
-                    Some(tok) => { return Ok(args); },
+                    Some(_) => { return Ok(args); },
                     None => { return Err(format!("[parse_args] @End, Hit EOF")); }
                 }
             },
@@ -492,9 +492,9 @@ fn parse_arg_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<A
 {
     match it.peek() {
         None => Err(format!("[parse_arg_list] @End, Hit EOF")),
-        Some((idx, token)) => match token {
+        Some((_, token)) => match token {
             Token::RBracket => { // Empty list
-                Ok(Arg::List(Vec::new()))
+                Ok(Arg::EmptyList)
             },
             _ => { // Parse as an arg
                 let arg1 = parse_arg(it, ss)?;
@@ -524,7 +524,8 @@ fn parse_arg_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<A
                             match token {
                                 Token::RBracket => {
                                     it.next();
-                                    Ok(Arg::List(v))
+                                    let list = v.iter().rev().fold(Arg::EmptyList, |acc, new| Arg::ListCon(Box::new(new.clone()), Box::new(acc)));
+                                    Ok(list)
                                 },
                                 Token::Comma => {
                                     loop {
@@ -547,13 +548,14 @@ fn parse_arg_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<A
                                         }
                                     }
                                     it.next();
-                                    Ok(Arg::List(v))
+                                    let list = v.iter().rev().fold(Arg::EmptyList, |acc, new| Arg::ListCon(Box::new(new.clone()), Box::new(acc)));
+                                    Ok(list)
                                 },
                                 t => Err(format!("[parse_arg_list] @{}, Expected `]` or `,`; found `{:?}` instead", idx2, t))
                             }
                         },
                         Token::RBracket => {
-                            Ok(Arg::List(vec![arg1]))
+                            Ok(Arg::ListCon(Box::new(arg1), Box::new(Arg::EmptyList)))
                         },
                         t => Err(format!("[parse_arg_list] @{}, Expected `]` or `,` or `:`; found {:?} instead", idx, t))
                     }
