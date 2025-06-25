@@ -114,13 +114,6 @@ pub enum Atom {
     BoolLit(bool)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Arg {
-    Atom(Atom),
-    ListCon(Box<Arg>, Box<Arg>),
-    List(Vec<Arg>)
-}
-
 impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Write strictly the first element into the supplied output
@@ -140,3 +133,33 @@ impl fmt::Display for Atom {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Arg {
+    Atom(Atom),
+    ListCon(Box<Arg>, Box<Arg>),
+    List(Vec<Arg>)
+}
+
+impl Arg {
+    pub fn is_var(&self) -> bool {
+        match self {
+            Arg::Atom(a) => match a {
+                Atom::Term(_) => true,
+                _ => false
+            }
+            _ => false
+        }
+    }
+
+    pub fn like_var(&self) -> bool {
+        // Weaker than is_var, counting cases where variables are in lists
+        match self {
+            Arg::Atom(a) => match a {
+                Atom::Term(_) => true,
+                _ => false
+            },
+            Arg::ListCon(arg1, arg2) => arg1.like_var() || arg2.like_var(),
+            Arg::List(args) => args.iter().any(|arg| arg.like_var())
+        }
+    }
+}

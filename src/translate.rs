@@ -69,3 +69,66 @@ pub fn translate_expr(expr: Expr) -> LambdaExpr {
     todo!();
 }
 */
+
+struct Match {
+    arity: usize,
+    args: Vec<SymbolID>,
+    body: Vec<(Vec<Arg>, Expr)>
+}
+
+fn fundef_to_match(fundefs: &Vec<Statement>, arity: usize, ss: &mut SymbolStack) -> Result<Match, String> {
+    let mut args: Vec<SymbolID> = Vec::with_capacity(arity);
+    let mut body = Vec::with_capacity(fundefs.len());
+
+    // populate args
+    for _ in 0..arity {
+        args.push(ss.grab());
+    }
+
+    for fundef in fundefs.iter() {
+        match fundef {
+            Statement::FuncDef(_, _args, e) => { // Assume symbols are all the same
+                body.push((_args.clone(), e.clone()));
+            },
+            Statement::MainDef(_) => { return Err(format!("[fundef_to_match] Expected FuncDef, got MainDef")); }
+        }
+    }
+
+    Ok(Match {
+        arity: arity,
+        args: args,
+        body: body
+    })
+}
+
+fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
+    // Variable rule
+    let mut retain_idx = Vec::<bool>::with_capacity(m.arity);
+    for i in 0..m.arity {
+        if m.body.iter().all(|(args, _)| args[i].is_var()) {
+            for (arg, body) in m.body.iter_mut() {
+                let old_symbol = match &arg[i] {
+                    Arg::Atom(t) => match t {
+                        Atom::Term(s) => s.0,
+                        _ => { return Err(format!("[match_reduce] Expected Arg(Atom::Symbol)")); }
+                    },
+                    _ => { return Err(format!("[match_reduce] Expected Arg(Atom::Symbol)")); }
+                };
+                *body = body.alpha_subst(old_symbol, m.args[i]);
+            }
+            retain_idx.push(false);
+        } else {
+            retain_idx.push(true);
+        }
+    }
+    retain(&mut m.args, &retain_idx);
+    for (arg, _) in m.body.iter_mut() {
+        retain(arg, &retain_idx);
+    }
+    Ok(())
+}
+
+fn retain<T>(v: &mut Vec<T>, retain_idx: &Vec<bool>) {
+    let mut retain_iter = retain_idx.iter();
+    v.retain(|_| *retain_iter.next().unwrap());
+}

@@ -14,6 +14,12 @@ impl fmt::Display for Symbol {
     }
 }
 
+impl Symbol {
+    pub fn is_symbol(&self, s: SymbolID) -> bool {
+        self.0 == s
+    }
+}
+
 pub struct SymbolStack {
     stack : Vec<SymbolTable>,
     next_u32 : u32
@@ -35,6 +41,7 @@ impl SymbolStack {
     }
 
     pub fn get_symbol(&mut self, s: &String) -> Symbol {
+        // Grab corresponding symbol for term, registering it if not already exists
         for table in self.stack.iter().rev() {
             match table.get(s) {
                 Some(i) => { return Symbol{0: *i, 1: true}; },
@@ -42,6 +49,13 @@ impl SymbolStack {
             }
         }
         self.register(s)
+    }
+
+    pub fn grab(&mut self) -> SymbolID {
+        // Just grabs the next symbol ID available, for use outside of parsing
+        let next = self.next_u32;
+        self.next_u32 += 1;
+        next
     }
 
     fn register(&mut self, s: &String) -> Symbol {
@@ -54,10 +68,12 @@ impl SymbolStack {
     }
 
     pub fn push_stack(&mut self) {
+        // Add a new table for sub-scope
         self.stack.push(SymbolTable::new());
     }
 
     pub fn pop_stack(&mut self) -> Option<SymbolTable> {
+        // Remove the localest table
         if self.stack.len() == 1 { // Don't pop if there's only the global table...
             return None;
         }
