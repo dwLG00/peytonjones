@@ -8,6 +8,7 @@ pub enum PatternTree {
     Expr(Option<Expr>)
 }
 
+/*
 
 fn add_expr(pt: &mut PatternTree, args: &[Atom], expr: &Expr) -> Result<(), ()> {
     // Mutate pt to add expr in the right location in the tree according to args
@@ -85,6 +86,7 @@ pub fn treat_function_definitions<'a>(statements: &Vec<(Vec<Arg>, &'a Expr)>, ss
     }
     Ok(pt)
 }
+*/
 
 /* For the time being, assume all argument terms are unique
 fn assert_dup_symbols(args: &Vec<Arg>) -> bool {

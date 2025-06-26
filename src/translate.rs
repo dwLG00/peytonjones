@@ -5,7 +5,7 @@ use std::os::macos::raw::stat;
 use crate::lambda::*;
 use crate::expr::*;
 use crate::symbols::*;
-use crate::treatment::{treat_function_definitions, PatternTree};
+//use crate::treatment::{treat_function_definitions, PatternTree};
 
 
 pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec<(SymbolID, LambdaExpr)>, String> {
