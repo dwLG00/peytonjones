@@ -7,68 +7,69 @@ use crate::expr::*;
 use crate::symbols::*;
 use crate::treatment::{treat_function_definitions, PatternTree};
 
-/*
-pub fn translate(statements: Vec<Statement>, next_symbol: SymbolID) -> Result<Vec<(SymbolID, LambdaExpr)>, ()> {
+
+pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec<(SymbolID, LambdaExpr)>, String> {
     let mut v: Vec<(SymbolID, LambdaExpr)> = Vec::new();
 
-    let function_map = match create_function_map(&statements) {
+    let (function_map, main_statement) = match create_function_map(&statements) {
         Ok(hm) => hm,
-        Err(_) => { return Err(()); }
+        Err(s) => { return Err(s); }
     };
+    if !validate_function_map(&function_map) {
+        return Err(format!("[translate] Code contains function definitions with contrasting arity"));
+    }
 
-    let mut next_symbol = next_symbol;
-
-    for symbol in function_map.keys().into_iter() {
-        match function_map.get(symbol) {
-            Some(body) => {
-                let maybe_pattern_tree = treat_function_definitions(body, next_symbol);
-                match maybe_pattern_tree {
-                    Ok((pattern_tree, ns)) => {
-                        let lambda_expr = build_lambda_expr(symbol.0, pattern_tree);
-                        next_symbol = ns;
-                        v.push((symbol.0, lambda_expr));
-                    },
-                    Err(_) => { return Err(()); }
-                }
-            },
-            None => { return Err(()); }
+    match main_statement {
+        Some(main) => {
+            match main {
+                Statement::MainDef(e) => {
+                    v.push((0, expr_to_lambda(&e)))
+                },
+                _ => { return Err(format!("[translate] Expected main definition, got function definition"))}
+            }
+        },
+        None => {
+            return Err(format!("[translate] No main definition found"));
         }
+    }
+
+    for (symbol, body) in function_map.iter() {
+        v.push(
+            (*symbol, match_to_lambda_expr(&mut fundef_to_match(body.iter().map(|t| &t.0), body[0].1, ss)?, ss)?)
+        );
     }
     Ok(v)
 }
 
-pub fn create_function_map<'a>(statements: &'a Vec<Statement>) -> Result<HashMap<Symbol, Vec<(Vec<Arg>, &'a Expr)>>, ()> {
-    // Create a hashmap of function name => vector of function definitions
-    let mut hm = HashMap::<Symbol, Vec<(Vec<Arg>, &Expr)>>::new();
+fn create_function_map(statements: &Vec<Statement>) -> Result<(HashMap<SymbolID, Vec<(Statement, usize)>>, Option<Statement>), String> {
+    let mut statement_buckets: HashMap<SymbolID, Vec<(Statement, usize)>> = HashMap::new();
+    let mut main_statement = None;
+
     for statement in statements.iter() {
         match statement {
-            Statement::MainDef(expr) => {
-                if let Some(_) = hm.get(&Symbol(0, false)) { return Err(()); } // There should only be 1 main function
-                hm.insert(Symbol(0, false), vec![(Vec::new(), expr)]);
-            },
-            Statement::FuncDef(symbol, args, expr) => {
-                match hm.get_mut(symbol) {
-                    Some(v) => {
-                        v.push((args.clone(), expr));
-                    },
-                    None => {
-                        hm.insert(*symbol, vec![(args.clone(), expr)]);
-                    }
-                }
+            Statement::MainDef(_) => { main_statement = Some(statement.clone()); },
+            Statement::FuncDef(s, args, _) => match statement_buckets.get_mut(&s.0) {
+                Some(v) => { v.push((statement.clone(), args.len())); },
+                None => { statement_buckets.insert(s.0, vec![(statement.clone(), args.len())]); }
             }
         }
     }
-    Ok(hm)
+    Ok((statement_buckets, main_statement))
 }
 
-pub fn build_lambda_expr(symbol_id: SymbolID, pt: PatternTree) -> LambdaExpr {
-    todo!();
+fn validate_function_map(hm: &HashMap<SymbolID, Vec<(Statement, usize)>>) -> bool {
+    // Ensure that all function definitions for the same function have the same arity
+    for (_, statement_vec) in hm.iter() {
+        if statement_vec.len() > 1 { // If only 1 definition, then arity should already be correct
+            let first_arity = statement_vec[0].1;
+            let all_same_arity = statement_vec.iter().all(|(_, arity)| *arity == first_arity);
+            if !all_same_arity {
+                return false;
+            }
+        }
+    }
+    true
 }
-
-pub fn translate_expr(expr: Expr) -> LambdaExpr {
-    todo!();
-}
-*/
 
 #[derive(Clone)]
 struct Match {
@@ -78,16 +79,16 @@ struct Match {
     if_fail: Option<Expr>
 }
 
-fn fundef_to_match(fundefs: &Vec<Statement>, arity: usize, ss: &mut SymbolStack) -> Result<Match, String> {
+fn fundef_to_match<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize, ss: &mut SymbolStack) -> Result<Match, String> {
     let mut args: Vec<SymbolID> = Vec::with_capacity(arity);
-    let mut body = Vec::with_capacity(fundefs.len());
+    let mut body = Vec::new();
 
     // populate args
     for _ in 0..arity {
         args.push(ss.grab());
     }
 
-    for fundef in fundefs.iter() {
+    for fundef in fundefs {
         match fundef {
             Statement::FuncDef(_, _args, e) => { // Assume symbols are all the same
                 body.push((_args.clone(), e.clone()));

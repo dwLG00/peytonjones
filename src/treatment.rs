@@ -10,6 +10,7 @@ pub enum PatternTree {
 
 
 fn add_expr(pt: &mut PatternTree, args: &[Atom], expr: &Expr) -> Result<(), ()> {
+    // Mutate pt to add expr in the right location in the tree according to args
     match pt {
         PatternTree::Node(hm) => {
             if args.len() == 0 {
@@ -38,21 +39,20 @@ fn add_expr(pt: &mut PatternTree, args: &[Atom], expr: &Expr) -> Result<(), ()> 
     }
 }
 
-pub fn treat_function_definitions<'a>(statements: &Vec<(Vec<Atom>, &'a Expr)>, next_symbol: SymbolID) -> Result<(PatternTree, SymbolID), ()> {
+pub fn treat_function_definitions<'a>(statements: &Vec<(Vec<Arg>, &'a Expr)>, ss: &mut SymbolStack) -> Result<PatternTree, ()> {
     if statements.len() == 0 {
-        return Ok((PatternTree::Expr(None), next_symbol));
+        return Ok(PatternTree::Expr(None));
     }
 
-    let mut next_symbol = next_symbol;
     let arity = statements[0].0.len();
 
-    let mut arg_atoms: Vec<Vec<Atom>> = Vec::new();
+    let mut arg_atoms: Vec<Vec<Arg>> = Vec::new();
     for _ in [0..statements.len()] {
         arg_atoms.push(Vec::new());
     }
 
     for (args, _) in statements.iter() {
-        if assert_dup_symbols(args) { return Err(()); }
+        //if assert_dup_symbols(args) { return Err(()); }
         if args.len() != arity { return Err(()); }
         for (i, arg) in args.iter().enumerate() {
             if !arg_atoms[i].contains(arg) {
@@ -83,23 +83,29 @@ pub fn treat_function_definitions<'a>(statements: &Vec<(Vec<Atom>, &'a Expr)>, n
         }
         if let Err(_) = add_expr(&mut pt, &new_args, expr) { return Err(()); }
     }
-    Ok((pt, next_symbol))
+    Ok(pt)
 }
 
-fn assert_dup_symbols(args: &Vec<Atom>) -> bool {
+/* For the time being, assume all argument terms are unique
+fn assert_dup_symbols(args: &Vec<Arg>) -> bool {
     for (i, arg) in args.iter().enumerate() {
         match arg {
-            Atom::Term(symbol) => {
-                for item in &args[0..i] {
-                    if let Atom::Term(symbol2) = item {
-                        if symbol == symbol2 && !symbol.1 { // Same unbounded variable being used
-                            return true;
+            Arg::Atom(a) => {
+                match a {
+                    Atom::Term(symbol) => {
+                    for item in &args[0..i] {
+                        if let Atom::Term(symbol2) = item {
+                            if symbol == symbol2 && !symbol.1 { // Same unbounded variable being used
+                                return true;
+                            }
                         }
                     }
+                },
+                _ => {}
                 }
-            },
-            _ => {}
+            }
         }
     }
     false
 }
+*/
