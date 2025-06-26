@@ -6,6 +6,7 @@ mod lex;
 mod parse;
 mod translate;
 mod treatment;
+mod aux;
 //use crate::lambda::{LambdaExpr, display, reduce_all};
 use crate::lambda::{LambdaExpr};
 use crate::lex::{lex};

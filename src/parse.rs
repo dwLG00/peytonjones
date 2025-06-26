@@ -460,8 +460,8 @@ fn parse_arg<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Arg, S
         Ok(maybe_success) => match maybe_success {
             Ok(arg) => Ok(arg),
             Err(err) => match err {
-                Some(t) => Err(format!("[parse_arg_list] @{}, Expected argument, found `{:?}` instead", idx, t)),
-                None => Err(format!("[parse_arg_list] @End, Hit EOF"))
+                Some(t) => Err(format!("[parse_arg] @{}, Expected argument, found `{:?}` instead", idx, t)),
+                None => Err(format!("[parse_arg] @End, Hit EOF"))
             }
         },
         Err(s) => Err(s)
@@ -506,8 +506,9 @@ fn parse_arg_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<A
                             skip_newlines(it)?;
                             let arg2 = parse_arg(it, ss)?;
                             let expect_rbracket = skip_newlines(it)?;
+                            let idx = grab_index(it);
                             match expect_rbracket {
-                                Token::RBArrow => {
+                                Token::RBracket => {
                                     it.next();
                                     Ok(Arg::ListCon(Box::new(arg1), Box::new(arg2)))
                                 },

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::os::macos::raw::stat;
 
+use crate::aux::Recursible;
 use crate::lambda::*;
 use crate::expr::*;
 use crate::symbols::*;
@@ -35,7 +36,7 @@ pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec
 
     for (symbol, body) in function_map.iter() {
         v.push(
-            (*symbol, match_to_lambda_expr(&mut fundef_to_match(body.iter().map(|t| &t.0), body[0].1, ss)?, ss)?)
+            (*symbol, build_function_def(body.iter().map(|t| &t.0), body[0].1, ss)?)
         );
     }
     Ok(v)
@@ -82,6 +83,15 @@ impl Match {
     fn arity(&self) -> usize {
         self.args.len()
     }
+}
+
+fn build_function_def<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
+    let mut match_ = fundef_to_match(fundefs, arity, ss)?;
+    let args = match_.args.clone();
+    let target_expr = match_to_lambda_expr(&mut match_, ss)?;
+    let lambda = args.iter().rev().fold(target_expr, |acc, x| LambdaExpr::Lambda(Symbol(*x, false), Box::new(acc)));
+    let lambda = lambda.recurse(simp_case); // Simplify trivial cases
+    Ok(lambda)
 }
 
 fn fundef_to_match<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize, ss: &mut SymbolStack) -> Result<Match, String> {

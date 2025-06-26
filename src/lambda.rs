@@ -1,10 +1,11 @@
 use core::fmt;
+use std::collections::btree_map::Keys;
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use crate::expr::{Atom, Arg, Binop};
-use crate::symbols::{Symbol, SymbolID};
-
+use crate::symbols::{Symbol, SymbolID, AlphaSubbable};
+use crate::aux::Recursible;
 
 #[derive(Clone)]
 pub enum LambdaExpr {
@@ -19,6 +20,44 @@ pub enum LambdaExpr {
     //IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
     TryThen(Box<LambdaExpr>, Box<LambdaExpr>),
     FAIL
+}
+
+impl Recursible for LambdaExpr {
+    fn recurse(&self, f: fn(LambdaExpr) -> LambdaExpr) -> LambdaExpr {
+        match self {
+            Self::ListCon(expr1, expr2) => f(Self::ListCon(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
+            Self::TermApplications(expr1, expr2) => f(Self::TermApplications(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
+            Self::Lambda(s, expr) => f(Self::Lambda(*s, Box::new(expr.recurse(f)))),
+            Self::LetIn(v, expr) => f(Self::LetIn(v.iter().map(|(s, e)| (*s, e.recurse(f))).collect(), Box::new(expr.recurse(f)))),
+            Self::CaseOf(s, hm) => f(Self::CaseOf(*s, HashMap::from_iter(hm.iter().map(|(arg, e)| (arg.clone(), e.recurse(f)))))),
+            Self::TryThen(expr1, expr2) => f(Self::TryThen(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
+            _ => f(self.clone())
+        }
+    }
+}
+
+impl AlphaSubbable for LambdaExpr {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Self::SimpleTerm(a) => Self::SimpleTerm(a.alpha_subst(old, new)),
+            Self::ListCon(car, cdr) => Self::ListCon(Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
+            Self::TermApplications(f, app) => Self::TermApplications(
+                Box::new(f.alpha_subst(old, new)),
+                Box::new(app.alpha_subst(old, new))
+            ),
+            Self::Lambda(s, expr) => Self::Lambda(s.alpha_subst(old, new), Box::new(expr.alpha_subst(old, new))),
+            Self::LetIn(v, expr) => Self::LetIn(
+                v.iter().map(|(s, e)| (s.alpha_subst(old, new), e.alpha_subst(old, new))).collect(),
+                Box::new(expr.alpha_subst(old, new))
+            ),
+            Self::CaseOf(s, hm) => Self::CaseOf(
+                s.alpha_subst(old, new),
+                alpha_subst(hm, old, new)
+            ),
+            Self::TryThen(first, second) => Self::TryThen(Box::new(first.alpha_subst(old, new)), Box::new(second.alpha_subst(old, new))),
+            _ => self.clone()
+        }
+    }
 }
 
 impl fmt::Display for LambdaExpr {
@@ -47,12 +86,20 @@ impl fmt::Display for LambdaExpr {
                 let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
                 let vec_s = vec_s.trim_end_matches(",");
                 let s = s.0;
-                write!(f, "(case {s}: {vec_s})")
+                write!(f, "(case s{s}: {vec_s})")
             },
             LambdaExpr::TryThen(first, second) => write!(f, "{first} █ {second}"),
             LambdaExpr::FAIL => write!(f, "FAIL")
         }
     }
+}
+
+fn alpha_subst(hm: &HashMap<Arg, LambdaExpr>, old: SymbolID, new: SymbolID) -> HashMap<Arg, LambdaExpr> {
+    let mut new_hm = HashMap::new();
+    for (arg, e) in hm.iter() {
+        new_hm.insert(arg.alpha_subst(old, new), e.alpha_subst(old, new));
+    }
+    new_hm
 }
 
 #[derive(Copy, Clone)]
@@ -148,6 +195,25 @@ impl<T> std::iter::FromIterator<Changed<T>> for Changed<Vec<T>> {
             Changed::Unchanged(v)
         }
     }
+}
+
+pub fn simp_case(e: LambdaExpr) -> LambdaExpr {
+    match e {
+        LambdaExpr::CaseOf(s, ref hm) => {
+            let vecify: Vec<(Arg, LambdaExpr)> = hm.iter().map(|(a, e)| (a.clone(), e.clone())).collect();
+            if vecify.len() == 1 {
+                let (a, e) = &vecify[0];
+                if let Arg::Atom(a) = a {
+                    if let Atom::Term(s_) = a {
+                        let e = e.alpha_subst(s_.0, s.0); // Revert the symbols
+                        return e;
+                    }
+                }
+            }
+        },
+        _ => {}
+    }
+    e
 }
 
 /*
