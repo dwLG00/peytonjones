@@ -8,22 +8,38 @@ use crate::symbols::{Symbol, SymbolID, AlphaSubbable};
 use crate::aux::Recursible;
 
 #[derive(Clone)]
-pub enum LambdaExpr {
+pub enum LambdaExpr<S> where S: Copy {
     SimpleTerm(Atom),
     OpTerm(OpTerm),
     EmptyList,
-    ListCon(Box<LambdaExpr>, Box<LambdaExpr>),
-    TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
-    Lambda(SymbolID, Box<LambdaExpr>),
-    LetIn(Vec<(SymbolID, LambdaExpr)>, Box<LambdaExpr>),
-    CaseOf(SymbolID, HashMap<Arg, LambdaExpr>),
-    //IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
-    TryThen(Box<LambdaExpr>, Box<LambdaExpr>),
+    ListCon(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
+    TermApplications(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
+    Lambda(S, Box<LambdaExpr<S>>),
+    LetIn(Vec<(S, LambdaExpr<S>)>, Box<LambdaExpr<S>>),
+    CaseOf(S, HashMap<Arg, LambdaExpr<S>>),
+    TryThen(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
     FAIL
 }
 
-impl Recursible for LambdaExpr {
-    fn recurse(&self, f: fn(LambdaExpr) -> LambdaExpr) -> LambdaExpr {
+impl<S: Copy> LambdaExpr<S> {
+    pub fn map<T>(&self, f: fn(S) -> T) -> LambdaExpr<T> where T: Copy {
+        match self {
+            LambdaExpr::SimpleTerm(a) => LambdaExpr::SimpleTerm(a.clone()),
+            LambdaExpr::OpTerm(op) => LambdaExpr::OpTerm(op.clone()),
+            LambdaExpr::EmptyList => LambdaExpr::EmptyList,
+            LambdaExpr::ListCon(car, cdr) => LambdaExpr::ListCon(Box::new(car.map(f)), Box::new(cdr.map(f))),
+            LambdaExpr::TermApplications(func, expr) => LambdaExpr::TermApplications(Box::new(func.map(f)), Box::new(expr.map(f))),
+            LambdaExpr::Lambda(s, expr) => LambdaExpr::Lambda(f(*s), Box::new(expr.map(f))),
+            LambdaExpr::LetIn(v, expr) => LambdaExpr::LetIn(v.iter().map(|(s, e)| (f(*s), e.map(f))).collect(), Box::new(expr.map(f))),
+            LambdaExpr::CaseOf(s, hm) => LambdaExpr::CaseOf(f(*s), HashMap::from_iter(hm.iter().map(|(arg, e)| (arg.clone(), e.map(f))))),
+            LambdaExpr::TryThen(expr1, expr2) => LambdaExpr::TryThen(Box::new(expr1.map(f)), Box::new(expr2.map(f))),
+            LambdaExpr::FAIL => LambdaExpr::FAIL
+        }
+    }
+}
+
+impl Recursible for LambdaExpr<SymbolID> {
+    fn recurse(&self, f: fn(LambdaExpr<SymbolID>) -> LambdaExpr<SymbolID>) -> LambdaExpr<SymbolID> {
         match self {
             Self::ListCon(expr1, expr2) => f(Self::ListCon(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
             Self::TermApplications(expr1, expr2) => f(Self::TermApplications(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
@@ -36,7 +52,7 @@ impl Recursible for LambdaExpr {
     }
 }
 
-impl AlphaSubbable for LambdaExpr {
+impl AlphaSubbable for LambdaExpr<SymbolID> {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
         match self {
             Self::SimpleTerm(a) => Self::SimpleTerm(a.alpha_subst(old, new)),
@@ -60,7 +76,7 @@ impl AlphaSubbable for LambdaExpr {
     }
 }
 
-impl fmt::Display for LambdaExpr {
+impl fmt::Display for LambdaExpr<SymbolID> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LambdaExpr::SimpleTerm(s) => write!(f, "{s}"),
@@ -92,7 +108,7 @@ impl fmt::Display for LambdaExpr {
     }
 }
 
-fn alpha_subst(hm: &HashMap<Arg, LambdaExpr>, old: SymbolID, new: SymbolID) -> HashMap<Arg, LambdaExpr> {
+fn alpha_subst(hm: &HashMap<Arg, LambdaExpr<SymbolID>>, old: SymbolID, new: SymbolID) -> HashMap<Arg, LambdaExpr<SymbolID>> {
     let mut new_hm = HashMap::new();
     for (arg, e) in hm.iter() {
         new_hm.insert(arg.alpha_subst(old, new), e.alpha_subst(old, new));
@@ -195,10 +211,10 @@ impl<T> std::iter::FromIterator<Changed<T>> for Changed<Vec<T>> {
     }
 }
 
-pub fn simp_case(e: LambdaExpr) -> LambdaExpr {
+pub fn simp_case(e: LambdaExpr<SymbolID>) -> LambdaExpr<SymbolID> {
     match e {
         LambdaExpr::CaseOf(s, ref hm) => {
-            let vecify: Vec<(Arg, LambdaExpr)> = hm.iter().map(|(a, e)| (a.clone(), e.clone())).collect();
+            let vecify: Vec<(Arg, LambdaExpr<SymbolID>)> = hm.iter().map(|(a, e)| (a.clone(), e.clone())).collect();
             if vecify.len() == 1 {
                 let (a, e) = &vecify[0];
                 if let Arg::Atom(a) = a {
