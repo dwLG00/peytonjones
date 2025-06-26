@@ -157,7 +157,7 @@ fn parse_expr<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, context: ExprCo
         skip_newlines(it)?;
         let expr = parse_expr_greedy(it, ss, context)?;
         ss.pop_stack();
-        return Ok(Expr::LetIn(Box::new(statement), Box::new(expr)))
+        return Ok(Expr::LetIn(vec![statement], Box::new(expr)))
 
     } else if parse_exact_term_weak(it, &"if".to_string()) { // if statement
         skip_newlines(it)?;

@@ -8,6 +8,10 @@ pub type SymbolTable = std::collections::HashMap<String, SymbolID>;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Symbol(pub SymbolID, pub bool); // ident, scope
 
+pub trait AlphaSubbable {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self;
+}
+
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "s{}", self.0)
@@ -17,6 +21,16 @@ impl fmt::Display for Symbol {
 impl Symbol {
     pub fn is_symbol(&self, s: SymbolID) -> bool {
         self.0 == s
+    }
+}
+
+impl AlphaSubbable for Symbol {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Symbol {
+        if self.0 == old {
+            Symbol(new, self.1)
+        } else {
+            self.clone()
+        }
     }
 }
 

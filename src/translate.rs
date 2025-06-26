@@ -104,6 +104,15 @@ fn fundef_to_match(fundefs: &Vec<Statement>, arity: usize, ss: &mut SymbolStack)
     })
 }
 
+fn match_to_lambda_expr(m: &mut Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
+    match match_reduce_vars(m) {
+        Ok(_) => {
+            match_reduce(m, ss)
+        }
+        Err(s) => Err(s)
+    }
+}
+
 fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
     // Variable rule
     let mut retain_idx = Vec::<bool>::with_capacity(m.arity);
@@ -134,7 +143,9 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
 fn match_reduce_empty(m: &Match) -> Result<LambdaExpr, String> {
     if m.arity > 0 {
         return Err(format!("[match_reduce_empty] Expected Match with arity 0, found arity {}", m.arity));
-    } else {
+    } else if m.body.len() == 0 { // Only 1 body expression
+        Ok(expr_to_lambda(&m.body[0].1))
+    } else { 
         let failcase = match &m.if_fail {
             Some(e) => expr_to_lambda(&e),
             None => LambdaExpr::FAIL

@@ -1,5 +1,5 @@
 use crate::lambda::{LambdaExpr};
-use crate::symbols::{Symbol, SymbolID, SymbolTable};
+use crate::symbols::{Symbol, SymbolID, SymbolTable, AlphaSubbable};
 use std::fmt;
 use std::cmp::Ordering;
 
@@ -19,6 +19,18 @@ impl Statement {
             (Self::FuncDef(s1, _, _), Self::FuncDef(s2, _, _)) => s1.cmp(s2)
         }
     }
+
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Statement::FuncDef(s, args, e) => {
+                let new_s = s.alpha_subst(old, new);
+                let new_args = args.iter().map(|a| a.alpha_subst(old, new)).collect();
+                let new_e = e.alpha_subst(old, new);
+                Statement::FuncDef(new_s, new_args, new_e)
+            },
+            Statement::MainDef(e) => Statement::MainDef(e.alpha_subst(old, new))
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -29,7 +41,7 @@ pub enum Expr {
     IfElse(Box<Expr>, Box<Expr>, Box<Expr>),
     List(Vec<Expr>),
     ListCon(Box<Expr>, Box<Expr>), // [expr1:expr2]
-    LetIn(Box<Statement>, Box<Expr>),
+    LetIn(Vec<Statement>, Box<Expr>),
     //Where(Box<Expr>, Vec<(Atom, Expr)>)
 }
 
@@ -47,8 +59,8 @@ impl Clone for Expr {
     }
 }
 
-impl Expr {
-    pub fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+impl AlphaSubbable for Expr {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
         match self {
             Self::App(expr1, expr2) => 
                 Self::App(
@@ -81,16 +93,7 @@ impl Expr {
                     Box::new(expr1.alpha_subst(old, new)),
                     Box::new(expr2.alpha_subst(old, new))
                 ),
-            Self::LetIn(statement, expr) =>
-                match &**statement {
-                    Statement::FuncDef(symbol, args, statement_expr) =>
-                        Self::LetIn(
-                            Box::new(Statement::FuncDef(*symbol, args.clone(), statement_expr.alpha_subst(old, new))),
-                            Box::new(expr.alpha_subst(old, new))
-                        ),
-                    Statement::MainDef(statement_expr) =>
-                        Self::LetIn(Box::new(Statement::MainDef((*statement_expr).clone())), Box::new(expr.alpha_subst(old, new)))
-                }
+            Self::LetIn(statements, expr) => Self::LetIn(statements.iter().map(|s| s.alpha_subst(old, new)).collect(), Box::new(expr.alpha_subst(old, new)))
         }
     }
 }
@@ -112,6 +115,15 @@ pub enum Atom {
     StringLit(String),
     IntLit(u32),
     BoolLit(bool)
+}
+
+impl AlphaSubbable for Atom {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Atom::Term(s) => Atom::Term(s.alpha_subst(old, new)),
+            _ => self.clone()
+        }
+    }
 }
 
 impl fmt::Display for Atom {
@@ -157,6 +169,16 @@ impl Arg {
             },
             Arg::ListCon(arg1, arg2) => arg1.like_var() || arg2.like_var(),
             Arg::EmptyList => false
+        }
+    }
+}
+
+impl AlphaSubbable for Arg {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Arg::Atom(a) => Arg::Atom(a.alpha_subst(old, new)),
+            Arg::ListCon(arg1, arg2) => Arg::ListCon(Box::new(arg1.alpha_subst(old, new)), Box::new(arg2.alpha_subst(old, new))),
+            Arg::EmptyList => Arg::EmptyList
         }
     }
 }

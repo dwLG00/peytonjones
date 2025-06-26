@@ -20,6 +20,17 @@ pub enum LambdaExpr {
     FAIL
 }
 
+pub enum OpTerm {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Lt, // <
+    Gt, // >
+    Eq,
+    IfThen
+}
+
 enum Changed<T> {
     Changed(T),
     Unchanged(T)
