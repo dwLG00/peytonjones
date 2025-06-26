@@ -285,13 +285,18 @@ fn expr_to_lambda(e: &Expr) -> LambdaExpr {
     match e {
         Expr::App(e1, e2) => LambdaExpr::TermApplications(Box::new(expr_to_lambda(e1)), Box::new(expr_to_lambda(e2))),
         Expr::Binop(b, e1, e2) => LambdaExpr::TermApplications(
-            Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::BinopTerm(*b)), Box::new(expr_to_lambda(e1)))), 
+            Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::OpTerm(OpTerm::from_binop(*b))), Box::new(expr_to_lambda(e1)))), 
             Box::new(expr_to_lambda(e2))
         ),
         Expr::Atom(a) => LambdaExpr::SimpleTerm(a.clone()),
-        Expr::IfElse(e1, e2, e3) => LambdaExpr::IfElse(
-            Box::new(expr_to_lambda(e1)),
-            Box::new(expr_to_lambda(e2)),
+        Expr::IfElse(e1, e2, e3) => LambdaExpr::TermApplications(Box::new(
+            LambdaExpr::TermApplications(
+                Box::new(LambdaExpr::TermApplications(
+                    Box::new(LambdaExpr::OpTerm(OpTerm::IfElse)),
+                    Box::new(expr_to_lambda(e1))
+                )),
+                Box::new(expr_to_lambda(e2))
+            )),
             Box::new(expr_to_lambda(e3))
         ),
         Expr::List(v) => if v.len() == 0 {

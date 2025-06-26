@@ -8,18 +8,19 @@ use crate::symbols::{Symbol, SymbolID};
 #[derive(Clone)]
 pub enum LambdaExpr {
     SimpleTerm(Atom),
-    BinopTerm(Binop),
+    OpTerm(OpTerm),
     EmptyList,
     ListCon(Box<LambdaExpr>, Box<LambdaExpr>),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
     Lambda(Symbol, Box<LambdaExpr>),
-    LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
+    //LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
     CaseOf(Symbol, HashMap<Arg, LambdaExpr>),
     IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
     TryThen(Box<LambdaExpr>, Box<LambdaExpr>),
     FAIL
 }
 
+#[derive(Copy, Clone)]
 pub enum OpTerm {
     Add,
     Sub,
@@ -28,7 +29,21 @@ pub enum OpTerm {
     Lt, // <
     Gt, // >
     Eq,
-    IfThen
+    IfElse
+}
+
+impl OpTerm {
+    pub fn from_binop(b: Binop) -> Self {
+        match b {
+            Binop::Add => OpTerm::Add,
+            Binop::Sub => OpTerm::Sub,
+            Binop::Mul => OpTerm::Mul,
+            Binop::Div => OpTerm::Div,
+            Binop::Lt => OpTerm::Lt,
+            Binop::Gt => OpTerm::Gt,
+            Binop::Eq => OpTerm::Eq
+        }
+    }
 }
 
 enum Changed<T> {
