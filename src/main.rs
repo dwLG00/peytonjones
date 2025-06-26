@@ -10,6 +10,7 @@ mod treatment;
 use crate::lambda::{LambdaExpr};
 use crate::lex::{lex};
 use crate::parse::{parse};
+use crate::translate::{translate};
 
 use std::fs::File;
 use std::error::Error;
@@ -40,9 +41,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("Lexed tokens: {:?}", toks);
             let parse_result = parse(toks);
             match parse_result {
-                Ok((statements, _)) => {
+                Ok((statements, mut ss)) => {
                     for (i, statement) in statements.iter().enumerate() {
                         println!("[{}] {:?}", i, statement);
+                    }
+                    let translate_result = translate(statements, &mut ss);
+                    match translate_result {
+                        Ok(translations) => {
+                            for (symbol, lambda) in translations.iter() {
+                                println!("{} => {}", symbol, lambda);
+                            }
+                        },
+                        Err(msg) => {
+                            println!("Translation error: {}", msg)
+                        }
                     }
                 },
                 Err(msg) => {

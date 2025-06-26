@@ -130,7 +130,7 @@ impl fmt::Display for Atom {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Atom::Term(s) => write!(f, "s{}", s.0),
-            Atom::StringLit(string) => write!(f, "\"{}\")", string),
+            Atom::StringLit(string) => write!(f, "\"{}\"", string),
             Atom::IntLit(int) => write!(f, "{}", int),
             Atom::BoolLit(b) => if *b {
                 write!(f, "true")

@@ -1,3 +1,4 @@
+use core::fmt;
 use std::collections::HashMap;
 use std::hash::Hash;
 
@@ -13,11 +14,45 @@ pub enum LambdaExpr {
     ListCon(Box<LambdaExpr>, Box<LambdaExpr>),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
     Lambda(Symbol, Box<LambdaExpr>),
-    //LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
+    LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
     CaseOf(Symbol, HashMap<Arg, LambdaExpr>),
-    IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
+    //IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
     TryThen(Box<LambdaExpr>, Box<LambdaExpr>),
     FAIL
+}
+
+impl fmt::Display for LambdaExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LambdaExpr::SimpleTerm(s) => write!(f, "{s}"),
+            LambdaExpr::OpTerm(op) => write!(f, "{op}"),
+            LambdaExpr::EmptyList => write!(f, "[]"),
+            LambdaExpr::ListCon(car, cdr) => write!(f, "{car} : {cdr}"),
+            LambdaExpr::TermApplications(func, app) => {
+                match **app {
+                    LambdaExpr::SimpleTerm(_) => write!(f, "{func} {app}"),
+                    _ => write!(f, "{func} ({app})")
+                }
+            },
+            LambdaExpr::Lambda(s, expr) => {
+                let s = s.0;
+                write!(f, "(λs{s}. {expr})")
+            },
+            LambdaExpr::LetIn(vec, expr) => {
+                let vec_s = vec.iter().map(|(s, e)| format!("s{s} := {e},")).collect::<String>();
+                let vec_s = vec_s.trim_end_matches(",");
+                write!(f, "(let {vec_s} in {expr})")
+            },
+            LambdaExpr::CaseOf(s, hm) => {
+                let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
+                let vec_s = vec_s.trim_end_matches(",");
+                let s = s.0;
+                write!(f, "(case {s}: {vec_s})")
+            },
+            LambdaExpr::TryThen(first, second) => write!(f, "{first} █ {second}"),
+            LambdaExpr::FAIL => write!(f, "FAIL")
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -42,6 +77,21 @@ impl OpTerm {
             Binop::Lt => OpTerm::Lt,
             Binop::Gt => OpTerm::Gt,
             Binop::Eq => OpTerm::Eq
+        }
+    }
+}
+
+impl fmt::Display for OpTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpTerm::Add => write!(f, "+"),
+            OpTerm::Sub => write!(f, "-"),
+            OpTerm::Mul => write!(f, "*"),
+            OpTerm::Div => write!(f, "/"),
+            OpTerm::Lt => write!(f, "<"),
+            OpTerm::Gt => write!(f, ">"),
+            OpTerm::Eq => write!(f, "="),
+            OpTerm::IfElse => write!(f, "if")
         }
     }
 }
@@ -387,33 +437,6 @@ fn features_var(e : &LambdaExpr, s : SymbolID) -> bool {
         },
         LambdaExpr::CaseOf(s_, hm) => {
             s_.0 == s || hm.iter().any(|(key, val)| arg_is_symbol(key, s) || features_var(val, s))
-        }
-    }
-}
-
-pub fn display(e : &LambdaExpr) -> String {
-    match e {
-        LambdaExpr::SimpleTerm(s) => s.to_string(),
-        LambdaExpr::TermApplications(expr1, expr2) => {
-            let s1 = display(expr1);
-            let s2 = display(expr2);
-            format!("{s1} {s2}")
-        },
-        LambdaExpr::Lambda(s, expr) => {
-            let s = s.0;
-            let expr_s = display(expr);
-            format!("(λs{s}. {expr_s})")
-        },
-        LambdaExpr::LetIn(vec, expr) => {
-            let expr_s = display(expr);
-            let vec_s = vec.iter().map(|(s, e)| format!("{} := {},", s, display(e))).collect::<String>();
-            let vec_s = vec_s.trim_end_matches(",");
-            format!("(let {} in {})", vec_s, expr_s)
-        },
-        LambdaExpr::CaseOf(s, hm) => {
-            let vec_s = hm.iter().map(|(key, val)| format!("({} => {}),", key.to_string(), display(val))).collect::<String>();
-            let vec_s = vec_s.trim_end_matches(",");
-            format!("(case {}: {})", s.0.to_string(), vec_s)
         }
     }
 }

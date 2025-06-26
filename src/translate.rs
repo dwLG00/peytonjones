@@ -73,10 +73,15 @@ fn validate_function_map(hm: &HashMap<SymbolID, Vec<(Statement, usize)>>) -> boo
 
 #[derive(Clone)]
 struct Match {
-    arity: usize,
     args: Vec<SymbolID>,
     body: Vec<(Vec<Arg>, Expr)>,
     if_fail: Option<Expr>
+}
+
+impl Match {
+    fn arity(&self) -> usize {
+        self.args.len()
+    }
 }
 
 fn fundef_to_match<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize, ss: &mut SymbolStack) -> Result<Match, String> {
@@ -98,7 +103,6 @@ fn fundef_to_match<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize,
     }
 
     Ok(Match {
-        arity: arity,
         args: args,
         body: body,
         if_fail: None
@@ -116,8 +120,8 @@ fn match_to_lambda_expr(m: &mut Match, ss: &mut SymbolStack) -> Result<LambdaExp
 
 fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
     // Variable rule
-    let mut retain_idx = Vec::<bool>::with_capacity(m.arity);
-    for i in 0..m.arity {
+    let mut retain_idx = Vec::<bool>::with_capacity(m.arity());
+    for i in 0..m.arity() {
         if m.body.iter().all(|(args, _)| args[i].is_var()) {
             for (arg, body) in m.body.iter_mut() {
                 let old_symbol = match &arg[i] {
@@ -142,8 +146,8 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
 }
 
 fn match_reduce_empty(m: &Match) -> Result<LambdaExpr, String> {
-    if m.arity > 0 {
-        return Err(format!("[match_reduce_empty] Expected Match with arity 0, found arity {}", m.arity));
+    if m.arity() > 0 {
+        return Err(format!("[match_reduce_empty] Expected Match with arity 0, found arity {}", m.arity()));
     } else if m.body.len() == 0 { // Only 1 body expression
         Ok(expr_to_lambda(&m.body[0].1))
     } else { 
@@ -157,7 +161,7 @@ fn match_reduce_empty(m: &Match) -> Result<LambdaExpr, String> {
 }
 
 fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
-    if m.arity == 0 {
+    if m.arity() == 0 {
         match_reduce_empty(m)
     } else {
         let car = m.args[0];
@@ -244,7 +248,6 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
         let mut hm: HashMap<Arg, LambdaExpr> = HashMap::new();
         for (arg, list) in temp_hm.into_iter() {
             let new_m = Match {
-                arity: m.arity - 1,
                 args: cdr.clone(),
                 body: list,
                 if_fail: None
@@ -254,7 +257,6 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
         }
         if list_vec.len() > 0 { // We have list args
             let new_m = Match {
-                arity: m.arity + 1, // Lose 1 arg, gain 2 (from car and cdr)
                 args: [car_symbol, cdr_symbol].iter().chain(m.args[1..].iter()).map(|a| *a).collect(),
                 body: list_vec,
                 if_fail: None
@@ -270,7 +272,6 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
         }
         if var_vec.len() > 0 {
             let new_m = Match {
-                arity: m.arity - 1,
                 args: cdr.clone(),
                 body: var_vec,
                 if_fail: None

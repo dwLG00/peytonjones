@@ -82,7 +82,7 @@ pub fn lex(s: String) -> Result<Vec<Token>, String> { // Lexer
                 },
                 ')' | ']' | ':' | ',' => { // Close num, and push these 
                     let s : String = buffer.iter().collect();
-                    tokens.push(Token::StrLiteral(s));
+                    tokens.push(Token::Term(s));
                     buffer.clear();
                     in_term = false;
                     match c {
