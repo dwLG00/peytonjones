@@ -24,7 +24,7 @@ pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec
         Some(main) => {
             match main {
                 Statement::MainDef(e) => {
-                    v.push((0, expr_to_lambda(&e)))
+                    v.push((0, expr_to_lambda(&e, ss)?))
                 },
                 _ => { return Err(format!("[translate] Expected main definition, got function definition"))}
             }
@@ -89,7 +89,7 @@ fn build_function_def<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usi
     let mut match_ = fundef_to_match(fundefs, arity, ss)?;
     let args = match_.args.clone();
     let target_expr = match_to_lambda_expr(&mut match_, ss)?;
-    let lambda = args.iter().rev().fold(target_expr, |acc, x| LambdaExpr::Lambda(Symbol(*x, false), Box::new(acc)));
+    let lambda = args.iter().rev().fold(target_expr, |acc, x| LambdaExpr::Lambda(*x, Box::new(acc)));
     let lambda = lambda.recurse(simp_case); // Simplify trivial cases
     Ok(lambda)
 }
@@ -155,24 +155,24 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
     Ok(())
 }
 
-fn match_reduce_empty(m: &Match) -> Result<LambdaExpr, String> {
+fn match_reduce_empty(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     if m.arity() > 0 {
         return Err(format!("[match_reduce_empty] Expected Match with arity 0, found arity {}", m.arity()));
     } else if m.body.len() == 0 { // Only 1 body expression
-        Ok(expr_to_lambda(&m.body[0].1))
+        Ok(expr_to_lambda(&m.body[0].1, ss)?)
     } else { 
         let failcase = match &m.if_fail {
-            Some(e) => expr_to_lambda(&e),
+            Some(e) => expr_to_lambda(&e, ss)?,
             None => LambdaExpr::FAIL
         };
-        let lambda_expr = m.body.iter().rev().fold(failcase, |acc, (_, e)| LambdaExpr::TryThen(Box::new(expr_to_lambda(e)), Box::new(acc)));
-        Ok(lambda_expr)
+        let lambda_expr: Result<LambdaExpr, String> = m.body.iter().rev().fold(Ok(failcase), |acc, (_, e)| Ok(LambdaExpr::TryThen(Box::new(expr_to_lambda(e, ss)?), Box::new(acc?))));
+        lambda_expr
     }
 }
 
 fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     if m.arity() == 0 {
-        match_reduce_empty(m)
+        match_reduce_empty(m, ss)
     } else {
         let car = m.args[0];
         let cdr = m.args[1..].to_vec();
@@ -289,35 +289,36 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
             let lambda_expr = match_reduce(&new_m, ss)?;
             hm.insert(Arg::Atom(Atom::Term(Symbol(var_symbol, false))), lambda_expr);
         }
-        Ok(LambdaExpr::CaseOf(Symbol(car, false), hm))
+        Ok(LambdaExpr::CaseOf(car, hm))
     }
 }
 
-fn expr_to_lambda(e: &Expr) -> LambdaExpr {
+fn expr_to_lambda(e: &Expr, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     match e {
-        Expr::App(e1, e2) => LambdaExpr::TermApplications(Box::new(expr_to_lambda(e1)), Box::new(expr_to_lambda(e2))),
-        Expr::Binop(b, e1, e2) => LambdaExpr::TermApplications(
-            Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::OpTerm(OpTerm::from_binop(*b))), Box::new(expr_to_lambda(e1)))), 
-            Box::new(expr_to_lambda(e2))
-        ),
-        Expr::Atom(a) => LambdaExpr::SimpleTerm(a.clone()),
-        Expr::IfElse(e1, e2, e3) => LambdaExpr::TermApplications(Box::new(
+        Expr::App(e1, e2) => Ok(LambdaExpr::TermApplications(Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
+        Expr::Binop(b, e1, e2) => Ok(LambdaExpr::TermApplications(
+            Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::OpTerm(OpTerm::from_binop(*b))), Box::new(expr_to_lambda(e1, ss)?))), 
+            Box::new(expr_to_lambda(e2, ss)?)
+        )),
+        Expr::Atom(a) => Ok(LambdaExpr::SimpleTerm(a.clone())),
+        Expr::IfElse(e1, e2, e3) => Ok(LambdaExpr::TermApplications(Box::new(
             LambdaExpr::TermApplications(
                 Box::new(LambdaExpr::TermApplications(
                     Box::new(LambdaExpr::OpTerm(OpTerm::IfElse)),
-                    Box::new(expr_to_lambda(e1))
+                    Box::new(expr_to_lambda(e1, ss)?)
                 )),
-                Box::new(expr_to_lambda(e2))
+                Box::new(expr_to_lambda(e2, ss)?)
             )),
-            Box::new(expr_to_lambda(e3))
-        ),
+            Box::new(expr_to_lambda(e3, ss)?)
+        )),
         Expr::List(v) => if v.len() == 0 {
-            LambdaExpr::EmptyList
+            Ok(LambdaExpr::EmptyList)
         } else {
-            fold_lambda_list(v.iter().rev().map(|e| expr_to_lambda(e)))
+            let v: Result<Vec<LambdaExpr>, String> = v.iter().rev().map(|e| expr_to_lambda(e, ss)).collect();
+            Ok(fold_lambda_list(v?.into_iter()))
         },
-        Expr::ListCon(e1, e2) => LambdaExpr::ListCon(Box::new(expr_to_lambda(e1)), Box::new(expr_to_lambda(e2))),
-        Expr::LetIn(s, e) => todo!()
+        Expr::ListCon(e1, e2) => Ok(LambdaExpr::ListCon(Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
+        Expr::LetIn(s, e) => Ok(LambdaExpr::LetIn(translate(s.clone(), ss)?, Box::new(expr_to_lambda(e, ss)?)))
     }
 }
 

@@ -14,9 +14,9 @@ pub enum LambdaExpr {
     EmptyList,
     ListCon(Box<LambdaExpr>, Box<LambdaExpr>),
     TermApplications(Box<LambdaExpr>, Box<LambdaExpr>),
-    Lambda(Symbol, Box<LambdaExpr>),
-    LetIn(Vec<(Symbol, LambdaExpr)>, Box<LambdaExpr>),
-    CaseOf(Symbol, HashMap<Arg, LambdaExpr>),
+    Lambda(SymbolID, Box<LambdaExpr>),
+    LetIn(Vec<(SymbolID, LambdaExpr)>, Box<LambdaExpr>),
+    CaseOf(SymbolID, HashMap<Arg, LambdaExpr>),
     //IfElse(Box<LambdaExpr>, Box<LambdaExpr>, Box<LambdaExpr>),
     TryThen(Box<LambdaExpr>, Box<LambdaExpr>),
     FAIL
@@ -74,7 +74,6 @@ impl fmt::Display for LambdaExpr {
                 }
             },
             LambdaExpr::Lambda(s, expr) => {
-                let s = s.0;
                 write!(f, "(λs{s}. {expr})")
             },
             LambdaExpr::LetIn(vec, expr) => {
@@ -85,7 +84,6 @@ impl fmt::Display for LambdaExpr {
             LambdaExpr::CaseOf(s, hm) => {
                 let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
                 let vec_s = vec_s.trim_end_matches(",");
-                let s = s.0;
                 write!(f, "(case s{s}: {vec_s})")
             },
             LambdaExpr::TryThen(first, second) => write!(f, "{first} █ {second}"),
@@ -205,7 +203,7 @@ pub fn simp_case(e: LambdaExpr) -> LambdaExpr {
                 let (a, e) = &vecify[0];
                 if let Arg::Atom(a) = a {
                     if let Atom::Term(s_) = a {
-                        let e = e.alpha_subst(s_.0, s.0); // Revert the symbols
+                        let e = e.alpha_subst(s_.0, s); // Revert the symbols
                         return e;
                     }
                 }

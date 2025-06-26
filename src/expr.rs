@@ -73,14 +73,7 @@ impl AlphaSubbable for Expr {
                     Box::new(expr1.alpha_subst(old, new)),
                     Box::new(expr2.alpha_subst(old, new))
                 ),
-            Self::Atom(atom) => match atom {
-                Atom::Term(symbol) => if symbol.0 == old && symbol.1 {
-                    Self::Atom(Atom::Term(Symbol(new, true)))
-                } else {
-                    Self::Atom(atom.clone())
-                },
-                _ => Self::Atom(atom.clone())
-            },
+            Self::Atom(atom) => Self::Atom(atom.alpha_subst(old, new)),
             Self::IfElse(cond, if_clause, else_clause) => 
                 Self::IfElse(
                     Box::new(cond.alpha_subst(old, new)),

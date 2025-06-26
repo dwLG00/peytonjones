@@ -12,6 +12,16 @@ pub trait AlphaSubbable {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self;
 }
 
+impl AlphaSubbable for SymbolID {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        if *self == old {
+            new
+        } else {
+            *self
+        }
+    }
+}
+
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "s{}", self.0)
