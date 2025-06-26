@@ -300,7 +300,12 @@ fn expr_to_lambda(e: &Expr, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>
             Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::OpTerm(OpTerm::from_binop(*b))), Box::new(expr_to_lambda(e1, ss)?))), 
             Box::new(expr_to_lambda(e2, ss)?)
         )),
-        Expr::Atom(a) => Ok(LambdaExpr::SimpleTerm(a.clone())),
+        Expr::Atom(a) => match a {
+            Atom::StringLit(s) => Ok(LambdaExpr::StringTerm(s.clone())),
+            Atom::IntLit(n) => Ok(LambdaExpr::IntTerm(*n)),
+            Atom::BoolLit(b) => Ok(LambdaExpr::BoolTerm(*b)),
+            Atom::Term(s) => Ok(LambdaExpr::VarTerm(s.0))
+        },
         Expr::IfElse(e1, e2, e3) => Ok(LambdaExpr::TermApplications(Box::new(
             LambdaExpr::TermApplications(
                 Box::new(LambdaExpr::TermApplications(

@@ -9,7 +9,11 @@ use crate::aux::Recursible;
 
 #[derive(Clone)]
 pub enum LambdaExpr<S> where S: Copy {
-    SimpleTerm(Atom),
+    //SimpleTerm(Atom),
+    StringTerm(String),
+    IntTerm(u32),
+    BoolTerm(bool),
+    VarTerm(S),
     OpTerm(OpTerm),
     EmptyList,
     ListCon(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
@@ -24,7 +28,11 @@ pub enum LambdaExpr<S> where S: Copy {
 impl<S: Copy> LambdaExpr<S> {
     pub fn map<T>(&self, f: fn(S) -> T) -> LambdaExpr<T> where T: Copy {
         match self {
-            LambdaExpr::SimpleTerm(a) => LambdaExpr::SimpleTerm(a.clone()),
+            //LambdaExpr::SimpleTerm(a) => LambdaExpr::SimpleTerm(a.clone()),
+            LambdaExpr::StringTerm(s) => LambdaExpr::StringTerm(s.clone()),
+            LambdaExpr::IntTerm(n) => LambdaExpr::IntTerm(*n),
+            LambdaExpr::BoolTerm(b) => LambdaExpr::BoolTerm(*b),
+            LambdaExpr::VarTerm(s) => LambdaExpr::VarTerm(f(*s)),
             LambdaExpr::OpTerm(op) => LambdaExpr::OpTerm(op.clone()),
             LambdaExpr::EmptyList => LambdaExpr::EmptyList,
             LambdaExpr::ListCon(car, cdr) => LambdaExpr::ListCon(Box::new(car.map(f)), Box::new(cdr.map(f))),
@@ -55,7 +63,11 @@ impl Recursible for LambdaExpr<SymbolID> {
 impl AlphaSubbable for LambdaExpr<SymbolID> {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
         match self {
-            Self::SimpleTerm(a) => Self::SimpleTerm(a.alpha_subst(old, new)),
+            //Self::SimpleTerm(a) => Self::SimpleTerm(a.alpha_subst(old, new)),
+            Self::StringTerm(s) => Self::StringTerm(s.clone()),
+            Self::IntTerm(n) => Self::IntTerm(*n),
+            Self::BoolTerm(b) => Self::BoolTerm(*b),
+            Self::VarTerm(s) => Self::VarTerm(s.alpha_subst(old, new)),
             Self::ListCon(car, cdr) => Self::ListCon(Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
             Self::TermApplications(f, app) => Self::TermApplications(
                 Box::new(f.alpha_subst(old, new)),
@@ -79,13 +91,23 @@ impl AlphaSubbable for LambdaExpr<SymbolID> {
 impl fmt::Display for LambdaExpr<SymbolID> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LambdaExpr::SimpleTerm(s) => write!(f, "{s}"),
+            //LambdaExpr::SimpleTerm(s) => write!(f, "{s}"),
+            LambdaExpr::StringTerm(s) => write!(f, "\"{s}\""),
+            LambdaExpr::IntTerm(n) => write!(f, "{n}"),
+            LambdaExpr::BoolTerm(b) => if *b {
+                write!(f, "true")
+            } else {
+                write!(f, "false")
+            },
+            LambdaExpr::VarTerm(s) => write!(f, "s{s}"),
             LambdaExpr::OpTerm(op) => write!(f, "{op}"),
             LambdaExpr::EmptyList => write!(f, "[]"),
             LambdaExpr::ListCon(car, cdr) => write!(f, "{car} : {cdr}"),
             LambdaExpr::TermApplications(func, app) => {
                 match **app {
-                    LambdaExpr::SimpleTerm(_) => write!(f, "{func} {app}"),
+                    //LambdaExpr::SimpleTerm(_) => write!(f, "{func} {app}"),
+                    LambdaExpr::StringTerm(_) | LambdaExpr::BoolTerm(_) 
+                        | LambdaExpr::IntTerm(_) | LambdaExpr::VarTerm(_) => write!(f, "{func} {app}"),
                     _ => write!(f, "{func} ({app})")
                 }
             },
