@@ -10,6 +10,10 @@ use crate::symbols::*;
 
 
 pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec<(SymbolID, LambdaExpr<SymbolID>)>, String> {
+    translate_aux(statements, ss, false)
+}
+
+fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool) -> Result<Vec<(SymbolID, LambdaExpr<SymbolID>)>, String> {
     let mut v: Vec<(SymbolID, LambdaExpr<SymbolID>)> = Vec::new();
 
     let (function_map, main_statement) = match create_function_map(&statements) {
@@ -20,17 +24,19 @@ pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec
         return Err(format!("[translate] Code contains function definitions with contrasting arity"));
     }
 
-    match main_statement {
-        Some(main) => {
-            match main {
-                Statement::MainDef(e) => {
-                    v.push((0, expr_to_lambda(&e, ss)?))
-                },
-                _ => { return Err(format!("[translate] Expected main definition, got function definition"))}
+    if !in_let {
+        match main_statement {
+            Some(main) => {
+                match main {
+                    Statement::MainDef(e) => {
+                        v.push((0, expr_to_lambda(&e, ss)?))
+                    },
+                    _ => { return Err(format!("[translate] Expected main definition, got function definition"))}
+                }
+            },
+            None => {
+                return Err(format!("[translate] No main definition found"));
             }
-        },
-        None => {
-            return Err(format!("[translate] No main definition found"));
         }
     }
 
@@ -323,7 +329,7 @@ fn expr_to_lambda(e: &Expr, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>
             Ok(fold_lambda_list(v?.into_iter()))
         },
         Expr::ListCon(e1, e2) => Ok(LambdaExpr::ListCon(Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
-        Expr::LetIn(s, e) => Ok(LambdaExpr::LetIn(translate(s.clone(), ss)?, Box::new(expr_to_lambda(e, ss)?)))
+        Expr::LetIn(s, e) => Ok(LambdaExpr::LetIn(translate_aux(s.clone(), ss, true)?, Box::new(expr_to_lambda(e, ss)?)))
     }
 }
 

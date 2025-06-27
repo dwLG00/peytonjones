@@ -43,6 +43,7 @@ enum ExprContext {
     InIf1, // if [here] then xyz else abc
     InIf2, // if xyz then [here] else abc
     InList,
+    InLet,
     None
 }
 
@@ -61,7 +62,7 @@ pub fn parse(tokens : Vec<Token>) -> Result<(Vec<Statement>, SymbolStack), Strin
     let mut it = tokens.iter().enumerate().peekable();
 
     while it.peek().is_some() {
-        let next_statement = parse_statement(&mut it, &mut symbol_stack);
+        let next_statement = parse_statement(&mut it, &mut symbol_stack, false);
         match next_statement {
             Ok(statement) => {
                 statements.push(statement);
@@ -73,7 +74,7 @@ pub fn parse(tokens : Vec<Token>) -> Result<(Vec<Statement>, SymbolStack), Strin
     Ok((statements, symbol_stack))
 }
 
-fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Statement, String> 
+fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, in_let: bool) -> Result<Statement, String> 
     where I: Iterator<Item=(usize, &'a Token)>
 {
     // Peek to clear the "main" case (no arguments)
@@ -101,40 +102,30 @@ fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<
         }
     }
     let expect_symbol = parse_symbol(it, ss);
+    ss.push_stack();
     match expect_symbol {
         Err(e) => Err(e),
         Ok(symbol) => {
             // match 0 or more Atoms
-            ss.push_stack();
-            /*
-            let mut atoms = Vec::new();
-            loop {
-                let expect_atom = parse_atom_weak(it, ss);
-                match expect_atom {
-                    Ok(atom) => atoms.push(atom),
-                    Err(maybe_tok) => match maybe_tok {
-                        Some(tok) => match tok {
-                            Token::Newline => { it.next(); }, // skip newlines atp
-                            _ => { break; }
-                        },
-                        None => { // Reached end of iterator
-                            return Err(format!("[parse_statement] @End, Hit EOF"));
-                        }
-                    }
-                }
-            }
-            */
             let args = parse_args(it, ss)?;
             let idx = grab_index(it); // For debugging
             // match eq
             match parse_eq_weak(it) {
-                Ok(()) => {}, // skips for you
+                Ok(()) => { skip_newlines(it)?; }, // skips for you
                 Err(maybe_token) => match maybe_token {
                     Some(token) => { return Err(format!("[parse_statement] @{}, Expected `=` after statement beginning, found {:?}", idx, token)); },
                     None => { return Err(format!("[parse_statement] @End, Expected `=` after statement beginning, found EOF")); }
                 }
             }
-            let expect_expr = parse_expr_greedy(it, ss, ExprContext::None);
+            let expect_expr = parse_expr_greedy(
+                it,
+                ss, 
+                if in_let {
+                    ExprContext::InLet
+                } else {
+                    ExprContext::None
+                }
+            );
             ss.pop_stack();
             match expect_expr {
                 Ok(expr) => Ok(Statement::FuncDef(symbol, args, expr)),
@@ -151,7 +142,7 @@ fn parse_expr<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, context: ExprCo
     if parse_exact_term_weak(it, &"let".to_string()) { // let statement
         ss.push_stack();
         skip_newlines(it)?;
-        let statement = parse_statement(it, ss)?;
+        let statement = parse_statement(it, ss, true)?;
         skip_newlines(it)?;
         parse_exact_term(it, &"in".to_string());
         skip_newlines(it)?;
@@ -294,6 +285,37 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
                         match context {
                             ExprContext::InIf2 => { return Ok(prev_expr); },
                             _ => { return Err(format!("[parse_expr_greedy_aux] @{}, unexpected `else`", idx)); }
+                        }
+                    } else if t == "let" {
+                        // Let block
+                        let mut statements = Vec::<Statement>::new();
+                        loop {
+                            let next = parse_statement(it, ss, true)?;
+                            statements.push(next);
+                            match it.next() {
+                                None => { return Err(format!("[parse_expr_greedy_aux] @End, expected comma or `in`, found EOF")); },
+                                Some((idx, t)) => match t {
+                                    Token::Term(s) => if s == "in" {
+                                        skip_newlines(it)?;
+                                        break;
+                                    } else {
+                                        return Err(format!("[parse_expr_greedy_aux] @{}, expected comma or `in`, found {:?} instead", idx, t));
+                                    },
+                                    Token::Comma => {
+                                        skip_newlines(it)?;
+                                        // Let loop
+                                    },
+                                    t => { return Err(format!("[parse_expr_greedy_aux] @{}, expected comma or `in`, found {:?} instead", idx, t))}
+                                }
+                            }
+                        }
+                        let next_expr = parse_expr_greedy(it, ss, context.clone())?;
+                        let expr = Expr::LetIn(statements, Box::new(next_expr));
+                        return parse_expr_greedy_aux(it, ss, context, expr);
+                    } else if t == "in" {
+                        match context {
+                            ExprContext::InLet => { return Ok(prev_expr); },
+                            _ => { return Err(format!("[parse_expr_greedy_aux] @{}, unexpected `in`", idx)); }
                         }
                     },
                     _ => {}
@@ -478,7 +500,12 @@ fn parse_args<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<Vec<A
             Ok(no_list_fail) => match no_list_fail {
                 Ok(arg) => { args.push(arg); },
                 Err(maybe_token) => match maybe_token {
-                    Some(_) => { return Ok(args); },
+                    Some(t) => {
+                        if let Token::Newline = t { // Skip newlines between arguments and eq
+                            skip_newlines(it)?;
+                        }
+                        return Ok(args);
+                    },
                     None => { return Err(format!("[parse_args] @End, Hit EOF")); }
                 }
             },
