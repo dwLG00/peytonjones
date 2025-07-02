@@ -24,8 +24,9 @@ use std::env;
 fn main() -> Result<(), Box<dyn Error>> {
     // (lambda x. (lambda y. x y z)) (lambda k. k k) a
 
-    let args: Vec<String> = env::args().collect();
-    let filename = &args[1];
+    //let args: Vec<String> = env::args().collect();
+    //let filename = &args[1];
+    let filename = &"/Users/dwall/peytonjones/test.txt".to_string();
 
     let mut file = File::open(filename)?;
     let mut contents = String::new();

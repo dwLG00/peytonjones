@@ -3,8 +3,8 @@ use std::hash::Hash;
 use disjoint::{DisjointSetVec, disjoint_set_vec};
 
 use crate::aux::join;
-use crate::expr::Arg;
-use crate::lambda::{AnnotatedLambdaExpr, LambdaExpr};
+use crate::expr::{Arg, Atom};
+use crate::lambda::{AnnotatedLambdaExpr, LambdaExpr, OpTerm};
 use crate::symbols::{Symbol, SymbolID};
 use crate::typecheck::TypedLambdaExpr;
 
@@ -51,7 +51,7 @@ impl TypeTable {
         }
     }
 
-    fn grab_vartype(&mut self) -> Type {
+    fn grab_infer(&mut self) -> Type {
         let temp = self.next_vartype;
         self.next_vartype += 1;
         self.variable_set.push(None);
@@ -161,14 +161,13 @@ fn unify(tt: &mut TypeTable, t1: Type, t2: Type) -> Result<Type, String> {
             let app = unify(tt, *t1b, *t2b)?;
             Ok(Type::Func(Box::new(func), Box::new(app)))
         },
+        (Type::Bool, Type::Bool) => Ok(Type::Bool),
+        (Type::Int, Type::Int) => Ok(Type::Int),
+        (Type::String, Type::String) => Ok(Type::String),
         _ => {
             Err(format!("[unify] Failed to unify {:?} and {:?}", t1, t2))
         }
     }
-}
-
-fn merge_var_chains(tt: &mut TypeTable, v1: u32, v2: u32) -> Result<(), String> {
-    todo!()
 }
 
 pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String> {
@@ -185,9 +184,13 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
             tt.insert_expr(*id, Type::Bool);
             Ok(Type::Bool)
         },
-        AnnotatedLambdaExpr::OpTerm(id, op) => todo!(),
+        AnnotatedLambdaExpr::OpTerm(id, op) => {
+            let op_type = get_op_type(tt, *op);
+            tt.insert_expr(*id, op_type.clone());
+            Ok(op_type)
+        },
         AnnotatedLambdaExpr::Lambda(id, s, expr) => {
-            let t = tt.grab_vartype();
+            let t = tt.grab_infer();
             tt.insert_symbol(*s, t.clone());
             let t2 = infer(tt, expr)?;
             let my_type = Type::Func(Box::new(t), Box::new(t2));
@@ -197,7 +200,12 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
         AnnotatedLambdaExpr::VarTerm(id, s) => {
             let t = match tt.get_symbol(s) {
                 Some(t) => t.clone(),
-                None => { return Err(format!("[infer] Expected symbol `{}s` to have type, but none found in table", s)); }
+                None => { 
+                    //return Err(format!("[infer] Expected symbol `s{}` to have type, but none found in table", s)); 
+                    let temp = tt.grab_infer();
+                    tt.insert_symbol(*s, temp.clone());
+                    temp
+                }
             };
             tt.insert_expr(*id, t.clone());
             Ok(t)
@@ -205,13 +213,13 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
         AnnotatedLambdaExpr::TermApplications(id, func, app) => {
             let func_type = infer(tt, func)?;
             let app_type = infer(tt, app)?;
-            let temp = tt.grab_vartype();
+            let temp = tt.grab_infer();
             unify(tt, func_type, Type::Func(Box::new(app_type), Box::new(temp.clone())))?; // MAYBE WRONG
             tt.insert_expr(*id, temp.clone());
             Ok(temp)
         },
         AnnotatedLambdaExpr::EmptyList(id) => {
-            let temp = tt.grab_vartype();
+            let temp = tt.grab_infer();
             let my_type = Type::List(Box::new(temp));
             tt.insert_expr(*id, my_type.clone());
             Ok(my_type)
@@ -234,7 +242,11 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
         },
         AnnotatedLambdaExpr::CaseOf(id, s, exprs) => {
             // resolve it to Type(s) -> Type(exprs.body)
-            let temp: Result<Vec<(Type, Type)>, String> = exprs.iter().map(|(arg, expr)| join(infer_arg(tt, arg), infer(tt, expr))).collect();
+            let temp: Result<Vec<(Type, Type)>, String> = exprs.iter().map(|(arg, expr)| {
+                let body_t = infer(tt, expr); // Parse the expression's type first, to populate 
+                let arg_t = infer_arg(tt, arg);
+                join(arg_t, body_t)
+            }).collect();
             let mut iter = temp?.into_iter();
             let mut first = iter.next().ok_or_else(|| format!("[infer] Expected Case expression to have at least 1 case"))?;
             for (head, body) in iter {
@@ -274,6 +286,67 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
     }
 }
 
+fn get_op_type(tt: &mut TypeTable, op: OpTerm) -> Type {
+    match op {
+        OpTerm::Add | OpTerm::Sub | OpTerm::Div | OpTerm::Mul => Type::Func(
+            Box::new(Type::Int),
+            Box::new(Type::Func(
+                Box::new(Type::Int),
+                Box::new(Type::Int)
+            ))
+        ),
+        OpTerm::Gt | OpTerm::Lt => Type::Func(
+            Box::new(Type::Int),
+            Box::new(Type::Func(
+                Box::new(Type::Int),
+                Box::new(Type::Bool)
+            ))
+        ),
+        OpTerm::Eq => {
+            let temp = tt.grab_infer();
+            Type::Func(
+                Box::new(temp.clone()),
+                Box::new(Type::Func(
+                    Box::new(temp),
+                    Box::new(Type::Bool)
+                ))
+            )
+        },
+        OpTerm::IfElse => {
+            let temp = tt.grab_infer();
+            Type::Func(
+                Box::new(Type::Bool),
+                Box::new(Type::Func(
+                    Box::new(temp.clone()),
+                    Box::new(Type::Func(
+                        Box::new(temp.clone()),
+                        Box::new(temp.clone()))
+                    )
+                ))
+            )
+        }
+    }
+}
+
 fn infer_arg(tt: &mut TypeTable, arg: &Arg) -> Result<Type, String> {
-    todo!()
+    match arg {
+        Arg::EmptyList => {
+            let temp = tt.grab_infer();
+            Ok(Type::List(Box::new(temp)))
+        },
+        Arg::ListCon(car, cdr) => {
+            let car_type = infer_arg(tt, car)?;
+            let cdr_type = infer_arg(tt, cdr)?;
+            unify(tt, cdr_type, Type::List(Box::new(car_type)))
+        },
+        Arg::Atom(a) => match a {
+            Atom::BoolLit(_) => Ok(Type::Bool),
+            Atom::StringLit(_) => Ok(Type::String),
+            Atom::IntLit(_) => Ok(Type::Int),
+            Atom::Term(s) => match tt.get_symbol(&s.0) {
+                Some(t) => Ok(t.clone()),
+                None => Ok(tt.grab_infer())
+            }
+        }
+    }
 }
