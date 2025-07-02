@@ -9,12 +9,12 @@ use crate::symbols::*;
 //use crate::treatment::{treat_function_definitions, PatternTree};
 
 
-pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec<(SymbolID, LambdaExpr<SymbolID>)>, String> {
+pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec<(SymbolID, LambdaExpr)>, String> {
     translate_aux(statements, ss, false)
 }
 
-fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool) -> Result<Vec<(SymbolID, LambdaExpr<SymbolID>)>, String> {
-    let mut v: Vec<(SymbolID, LambdaExpr<SymbolID>)> = Vec::new();
+fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool) -> Result<Vec<(SymbolID, LambdaExpr)>, String> {
+    let mut v: Vec<(SymbolID, LambdaExpr)> = Vec::new();
 
     let (function_map, main_statement) = match create_function_map(&statements) {
         Ok(hm) => hm,
@@ -91,11 +91,11 @@ impl Match {
     }
 }
 
-fn build_function_def<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>, String> {
+fn build_function_def<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     let mut match_ = fundef_to_match(fundefs, arity, ss)?;
     let args = match_.args.clone();
     let target_expr = match_to_lambda_expr(&mut match_, ss)?;
-    let lambda = args.iter().rev().fold(target_expr, |acc, x| LambdaExpr::Lambda(*x, Box::new(acc)));
+    let lambda = args.iter().rev().fold(target_expr, |acc, x| LambdaExpr::Lambda((), *x, Box::new(acc)));
     let lambda = lambda.recurse(simp_case); // Simplify trivial cases
     Ok(lambda)
 }
@@ -125,7 +125,7 @@ fn fundef_to_match<'a>(fundefs: impl Iterator<Item=&'a Statement>, arity: usize,
     })
 }
 
-fn match_to_lambda_expr(m: &mut Match, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>, String> {
+fn match_to_lambda_expr(m: &mut Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     match match_reduce_vars(m) {
         Ok(_) => {
             match_reduce(m, ss)
@@ -161,7 +161,7 @@ fn match_reduce_vars(m: &mut Match) -> Result<(), String> {
     Ok(())
 }
 
-fn match_reduce_empty(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>, String> {
+fn match_reduce_empty(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     if m.arity() > 0 {
         return Err(format!("[match_reduce_empty] Expected Match with arity 0, found arity {}", m.arity()));
     } else if m.body.len() == 0 { // Only 1 body expression
@@ -171,12 +171,12 @@ fn match_reduce_empty(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr<Symb
             Some(e) => expr_to_lambda(&e, ss)?,
             None => LambdaExpr::FAIL
         };
-        let lambda_expr: Result<LambdaExpr<SymbolID>, String> = m.body.iter().rev().fold(Ok(failcase), |acc, (_, e)| Ok(LambdaExpr::TryThen(Box::new(expr_to_lambda(e, ss)?), Box::new(acc?))));
+        let lambda_expr: Result<LambdaExpr, String> = m.body.iter().rev().fold(Ok(failcase), |acc, (_, e)| Ok(LambdaExpr::TryThen((), Box::new(expr_to_lambda(e, ss)?), Box::new(acc?))));
         lambda_expr
     }
 }
 
-fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>, String> {
+fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     if m.arity() == 0 {
         match_reduce_empty(m, ss)
     } else {
@@ -261,7 +261,7 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>,
             }
         }
 
-        let mut hm: HashMap<Arg, LambdaExpr<SymbolID>> = HashMap::new();
+        let mut hm: HashMap<Arg, LambdaExpr> = HashMap::new();
         for (arg, list) in temp_hm.into_iter() {
             let new_m = Match {
                 args: cdr.clone(),
@@ -295,27 +295,28 @@ fn match_reduce(m: &Match, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>,
             let lambda_expr = match_reduce(&new_m, ss)?;
             hm.insert(Arg::Atom(Atom::Term(Symbol(var_symbol, false))), lambda_expr);
         }
-        Ok(LambdaExpr::CaseOf(car, hm))
+        Ok(LambdaExpr::CaseOf((), car, hm))
     }
 }
 
-fn expr_to_lambda(e: &Expr, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>, String> {
+fn expr_to_lambda(e: &Expr, ss: &mut SymbolStack) -> Result<LambdaExpr, String> {
     match e {
-        Expr::App(e1, e2) => Ok(LambdaExpr::TermApplications(Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
+        Expr::App(e1, e2) => Ok(LambdaExpr::TermApplications((), Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
         Expr::Binop(b, e1, e2) => Ok(LambdaExpr::TermApplications(
-            Box::new(LambdaExpr::TermApplications(Box::new(LambdaExpr::OpTerm(OpTerm::from_binop(*b))), Box::new(expr_to_lambda(e1, ss)?))), 
+            (),
+            Box::new(LambdaExpr::TermApplications((), Box::new(LambdaExpr::OpTerm((), OpTerm::from_binop(*b))), Box::new(expr_to_lambda(e1, ss)?))), 
             Box::new(expr_to_lambda(e2, ss)?)
         )),
         Expr::Atom(a) => match a {
-            Atom::StringLit(s) => Ok(LambdaExpr::StringTerm(s.clone())),
-            Atom::IntLit(n) => Ok(LambdaExpr::IntTerm(*n)),
-            Atom::BoolLit(b) => Ok(LambdaExpr::BoolTerm(*b)),
-            Atom::Term(s) => Ok(LambdaExpr::VarTerm(s.0))
+            Atom::StringLit(s) => Ok(LambdaExpr::StringTerm((), s.clone())),
+            Atom::IntLit(n) => Ok(LambdaExpr::IntTerm((), *n)),
+            Atom::BoolLit(b) => Ok(LambdaExpr::BoolTerm((), *b)),
+            Atom::Term(s) => Ok(LambdaExpr::VarTerm((), s.0))
         },
-        Expr::IfElse(e1, e2, e3) => Ok(LambdaExpr::TermApplications(Box::new(
-            LambdaExpr::TermApplications(
-                Box::new(LambdaExpr::TermApplications(
-                    Box::new(LambdaExpr::OpTerm(OpTerm::IfElse)),
+        Expr::IfElse(e1, e2, e3) => Ok(LambdaExpr::TermApplications((), Box::new(
+            LambdaExpr::TermApplications((), 
+                Box::new(LambdaExpr::TermApplications((), 
+                    Box::new(LambdaExpr::OpTerm((), OpTerm::IfElse)),
                     Box::new(expr_to_lambda(e1, ss)?)
                 )),
                 Box::new(expr_to_lambda(e2, ss)?)
@@ -323,18 +324,18 @@ fn expr_to_lambda(e: &Expr, ss: &mut SymbolStack) -> Result<LambdaExpr<SymbolID>
             Box::new(expr_to_lambda(e3, ss)?)
         )),
         Expr::List(v) => if v.len() == 0 {
-            Ok(LambdaExpr::EmptyList)
+            Ok(LambdaExpr::EmptyList(()))
         } else {
-            let v: Result<Vec<LambdaExpr<SymbolID>>, String> = v.iter().rev().map(|e| expr_to_lambda(e, ss)).collect();
+            let v: Result<Vec<LambdaExpr>, String> = v.iter().rev().map(|e| expr_to_lambda(e, ss)).collect();
             Ok(fold_lambda_list(v?.into_iter()))
         },
-        Expr::ListCon(e1, e2) => Ok(LambdaExpr::ListCon(Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
-        Expr::LetIn(s, e) => Ok(LambdaExpr::LetIn(translate_aux(s.clone(), ss, true)?, Box::new(expr_to_lambda(e, ss)?)))
+        Expr::ListCon(e1, e2) => Ok(LambdaExpr::ListCon((), Box::new(expr_to_lambda(e1, ss)?), Box::new(expr_to_lambda(e2, ss)?))),
+        Expr::LetIn(s, e) => Ok(LambdaExpr::LetIn((), translate_aux(s.clone(), ss, true)?, Box::new(expr_to_lambda(e, ss)?)))
     }
 }
 
-fn fold_lambda_list(it: impl Iterator<Item=LambdaExpr<SymbolID>>) -> LambdaExpr<SymbolID> {
-    it.fold(LambdaExpr::EmptyList, |acc, x| LambdaExpr::ListCon(Box::new(x), Box::new(acc)))
+fn fold_lambda_list(it: impl Iterator<Item=LambdaExpr>) -> LambdaExpr {
+    it.fold(LambdaExpr::EmptyList(()), |acc, x| LambdaExpr::ListCon((), Box::new(x), Box::new(acc)))
 }
 
 fn retain<T>(v: &mut Vec<T>, retain_idx: &Vec<bool>) {

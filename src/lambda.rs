@@ -8,129 +8,136 @@ use crate::symbols::{Symbol, SymbolID, AlphaSubbable};
 use crate::aux::Recursible;
 
 #[derive(Clone)]
-pub enum LambdaExpr<S> where S: Copy {
-    //SimpleTerm(Atom),
-    StringTerm(String),
-    IntTerm(u32),
-    BoolTerm(bool),
-    VarTerm(S),
-    OpTerm(OpTerm),
-    EmptyList,
-    ListCon(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
-    TermApplications(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
-    Lambda(S, Box<LambdaExpr<S>>),
-    LetIn(Vec<(S, LambdaExpr<S>)>, Box<LambdaExpr<S>>),
-    CaseOf(S, HashMap<Arg, LambdaExpr<S>>),
-    TryThen(Box<LambdaExpr<S>>, Box<LambdaExpr<S>>),
+pub enum AnnotatedLambdaExpr<S, N> where S: Copy, N: Copy {
+    StringTerm(N, String),
+    IntTerm(N, u32),
+    BoolTerm(N, bool),
+    VarTerm(N, S),
+    OpTerm(N, OpTerm),
+    EmptyList(N),
+    ListCon(N, Box<AnnotatedLambdaExpr<S, N>>, Box<AnnotatedLambdaExpr<S, N>>),
+    TermApplications(N, Box<AnnotatedLambdaExpr<S, N>>, Box<AnnotatedLambdaExpr<S, N>>),
+    Lambda(N, S, Box<AnnotatedLambdaExpr<S, N>>),
+    LetIn(N, Vec<(S, AnnotatedLambdaExpr<S, N>)>, Box<AnnotatedLambdaExpr<S, N>>),
+    CaseOf(N, S, HashMap<Arg, AnnotatedLambdaExpr<S, N>>),
+    TryThen(N, Box<AnnotatedLambdaExpr<S, N>>, Box<AnnotatedLambdaExpr<S, N>>),
     FAIL
 }
 
-impl<S: Copy> LambdaExpr<S> {
-    pub fn map<T>(&self, f: fn(S) -> T) -> LambdaExpr<T> where T: Copy {
+
+impl<S: Copy, N: Copy> AnnotatedLambdaExpr<S, N> {
+    pub fn map<N2, F>(self, f: &mut F) -> AnnotatedLambdaExpr<S, N2> 
+        where F: FnMut(N) -> N2,
+        N2: Copy
+    {
         match self {
-            //LambdaExpr::SimpleTerm(a) => LambdaExpr::SimpleTerm(a.clone()),
-            LambdaExpr::StringTerm(s) => LambdaExpr::StringTerm(s.clone()),
-            LambdaExpr::IntTerm(n) => LambdaExpr::IntTerm(*n),
-            LambdaExpr::BoolTerm(b) => LambdaExpr::BoolTerm(*b),
-            LambdaExpr::VarTerm(s) => LambdaExpr::VarTerm(f(*s)),
-            LambdaExpr::OpTerm(op) => LambdaExpr::OpTerm(op.clone()),
-            LambdaExpr::EmptyList => LambdaExpr::EmptyList,
-            LambdaExpr::ListCon(car, cdr) => LambdaExpr::ListCon(Box::new(car.map(f)), Box::new(cdr.map(f))),
-            LambdaExpr::TermApplications(func, expr) => LambdaExpr::TermApplications(Box::new(func.map(f)), Box::new(expr.map(f))),
-            LambdaExpr::Lambda(s, expr) => LambdaExpr::Lambda(f(*s), Box::new(expr.map(f))),
-            LambdaExpr::LetIn(v, expr) => LambdaExpr::LetIn(v.iter().map(|(s, e)| (f(*s), e.map(f))).collect(), Box::new(expr.map(f))),
-            LambdaExpr::CaseOf(s, hm) => LambdaExpr::CaseOf(f(*s), HashMap::from_iter(hm.iter().map(|(arg, e)| (arg.clone(), e.map(f))))),
-            LambdaExpr::TryThen(expr1, expr2) => LambdaExpr::TryThen(Box::new(expr1.map(f)), Box::new(expr2.map(f))),
-            LambdaExpr::FAIL => LambdaExpr::FAIL
+            Self::StringTerm(n, s) => AnnotatedLambdaExpr::StringTerm(f(n), s),
+            Self::IntTerm(n, i) => AnnotatedLambdaExpr::IntTerm(f(n), i),
+            Self::BoolTerm(n, b) => AnnotatedLambdaExpr::BoolTerm(f(n), b),
+            Self::VarTerm(n, s) => AnnotatedLambdaExpr::VarTerm(f(n), s),
+            Self::OpTerm(n, op) => AnnotatedLambdaExpr::OpTerm(f(n), op),
+            Self::EmptyList(n) => AnnotatedLambdaExpr::EmptyList(f(n)),
+            Self::ListCon(n, expr1, expr2) => AnnotatedLambdaExpr::ListCon(f(n), Box::new(expr1.map(f)), Box::new(expr2.map(f))),
+            Self::TermApplications(n, expr1, expr2) => AnnotatedLambdaExpr::TermApplications(f(n), Box::new(expr1.map(f)), Box::new(expr2.map(f))),
+            Self::Lambda(n, s, expr) => AnnotatedLambdaExpr::Lambda(f(n), s, Box::new(expr.map(f))),
+            Self::LetIn(n, v, expr) => AnnotatedLambdaExpr::LetIn(f(n), v.into_iter().map(|(s, e)| (s, e.map(f))).collect(), Box::new(expr.map(f))),
+            Self::CaseOf(n, s, hm) => AnnotatedLambdaExpr::CaseOf(f(n), s, hm.into_iter().map(|(arg, e)| (arg, e.map(f))).collect()),
+            Self::TryThen(n, expr1, expr2) => AnnotatedLambdaExpr::TryThen(f(n), Box::new(expr1.map(f)), Box::new(expr2.map(f))),
+            Self::FAIL => AnnotatedLambdaExpr::FAIL
         }
     }
 }
 
-impl Recursible for LambdaExpr<SymbolID> {
-    fn recurse(&self, f: fn(LambdaExpr<SymbolID>) -> LambdaExpr<SymbolID>) -> LambdaExpr<SymbolID> {
+pub type LambdaExpr = AnnotatedLambdaExpr<SymbolID, ()>;
+
+impl Recursible for LambdaExpr {
+    fn recurse(&self, f: fn(LambdaExpr) -> LambdaExpr) -> LambdaExpr {
         match self {
-            Self::ListCon(expr1, expr2) => f(Self::ListCon(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
-            Self::TermApplications(expr1, expr2) => f(Self::TermApplications(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
-            Self::Lambda(s, expr) => f(Self::Lambda(*s, Box::new(expr.recurse(f)))),
-            Self::LetIn(v, expr) => f(Self::LetIn(v.iter().map(|(s, e)| (*s, e.recurse(f))).collect(), Box::new(expr.recurse(f)))),
-            Self::CaseOf(s, hm) => f(Self::CaseOf(*s, HashMap::from_iter(hm.iter().map(|(arg, e)| (arg.clone(), e.recurse(f)))))),
-            Self::TryThen(expr1, expr2) => f(Self::TryThen(Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
+            Self::ListCon(_, expr1, expr2) => f(Self::ListCon((), Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
+            Self::TermApplications(_, expr1, expr2) => f(Self::TermApplications((), Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
+            Self::Lambda(_, s, expr) => f(Self::Lambda((), *s, Box::new(expr.recurse(f)))),
+            Self::LetIn(_, v, expr) => f(Self::LetIn((), v.iter().map(|(s, e)| (*s, e.recurse(f))).collect(), Box::new(expr.recurse(f)))),
+            Self::CaseOf(_, s, hm) => f(Self::CaseOf((), *s, HashMap::from_iter(hm.iter().map(|(arg, e)| (arg.clone(), e.recurse(f)))))),
+            Self::TryThen(_, expr1, expr2) => f(Self::TryThen((), Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
             _ => f(self.clone())
         }
     }
 }
 
-impl AlphaSubbable for LambdaExpr<SymbolID> {
+impl AlphaSubbable for LambdaExpr {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
         match self {
             //Self::SimpleTerm(a) => Self::SimpleTerm(a.alpha_subst(old, new)),
-            Self::StringTerm(s) => Self::StringTerm(s.clone()),
-            Self::IntTerm(n) => Self::IntTerm(*n),
-            Self::BoolTerm(b) => Self::BoolTerm(*b),
-            Self::VarTerm(s) => Self::VarTerm(s.alpha_subst(old, new)),
-            Self::ListCon(car, cdr) => Self::ListCon(Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
-            Self::TermApplications(f, app) => Self::TermApplications(
+            Self::StringTerm(_, s) => Self::StringTerm((), s.clone()),
+            Self::IntTerm(_, n) => Self::IntTerm((), *n),
+            Self::BoolTerm(_, b) => Self::BoolTerm((), *b),
+            Self::VarTerm(_, s) => Self::VarTerm((), s.alpha_subst(old, new)),
+            Self::ListCon(_, car, cdr) => Self::ListCon((), Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
+            Self::TermApplications(_, f, app) => Self::TermApplications(
+                (),
                 Box::new(f.alpha_subst(old, new)),
                 Box::new(app.alpha_subst(old, new))
             ),
-            Self::Lambda(s, expr) => Self::Lambda(s.alpha_subst(old, new), Box::new(expr.alpha_subst(old, new))),
-            Self::LetIn(v, expr) => Self::LetIn(
+            Self::Lambda(_, s, expr) => Self::Lambda((), s.alpha_subst(old, new), Box::new(expr.alpha_subst(old, new))),
+            Self::LetIn(_, v, expr) => Self::LetIn(
+                (), 
                 v.iter().map(|(s, e)| (s.alpha_subst(old, new), e.alpha_subst(old, new))).collect(),
                 Box::new(expr.alpha_subst(old, new))
             ),
-            Self::CaseOf(s, hm) => Self::CaseOf(
+            Self::CaseOf(_, s, hm) => Self::CaseOf(
+                (),
                 s.alpha_subst(old, new),
                 alpha_subst(hm, old, new)
             ),
-            Self::TryThen(first, second) => Self::TryThen(Box::new(first.alpha_subst(old, new)), Box::new(second.alpha_subst(old, new))),
+            Self::TryThen(_, first, second) => Self::TryThen((), Box::new(first.alpha_subst(old, new)), Box::new(second.alpha_subst(old, new))),
             _ => self.clone()
         }
     }
 }
 
-impl fmt::Display for LambdaExpr<SymbolID> {
+impl fmt::Display for LambdaExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             //LambdaExpr::SimpleTerm(s) => write!(f, "{s}"),
-            LambdaExpr::StringTerm(s) => write!(f, "\"{s}\""),
-            LambdaExpr::IntTerm(n) => write!(f, "{n}"),
-            LambdaExpr::BoolTerm(b) => if *b {
+            LambdaExpr::StringTerm(_, s) => write!(f, "\"{s}\""),
+            LambdaExpr::IntTerm(_, n) => write!(f, "{n}"),
+            LambdaExpr::BoolTerm(_, b) => if *b {
                 write!(f, "true")
             } else {
                 write!(f, "false")
             },
-            LambdaExpr::VarTerm(s) => write!(f, "s{s}"),
-            LambdaExpr::OpTerm(op) => write!(f, "{op}"),
-            LambdaExpr::EmptyList => write!(f, "[]"),
-            LambdaExpr::ListCon(car, cdr) => write!(f, "{car} : {cdr}"),
-            LambdaExpr::TermApplications(func, app) => {
+            LambdaExpr::VarTerm(_, s) => write!(f, "s{s}"),
+            LambdaExpr::OpTerm(_, op) => write!(f, "{op}"),
+            LambdaExpr::EmptyList(_) => write!(f, "[]"),
+            LambdaExpr::ListCon(_, car, cdr) => write!(f, "{car} : {cdr}"),
+            LambdaExpr::TermApplications(_, func, app) => {
                 match **app {
                     //LambdaExpr::SimpleTerm(_) => write!(f, "{func} {app}"),
-                    LambdaExpr::StringTerm(_) | LambdaExpr::BoolTerm(_) 
-                        | LambdaExpr::IntTerm(_) | LambdaExpr::VarTerm(_) => write!(f, "{func} {app}"),
+                    LambdaExpr::StringTerm(_, _) | LambdaExpr::BoolTerm(_, _) 
+                        | LambdaExpr::IntTerm(_, _) | LambdaExpr::VarTerm(_, _) => write!(f, "{func} {app}"),
                     _ => write!(f, "{func} ({app})")
                 }
             },
-            LambdaExpr::Lambda(s, expr) => {
+            LambdaExpr::Lambda(_, s, expr) => {
                 write!(f, "(λs{s}. {expr})")
             },
-            LambdaExpr::LetIn(vec, expr) => {
+            LambdaExpr::LetIn(_, vec, expr) => {
                 let vec_s = vec.iter().map(|(s, e)| format!("s{s} := {e},")).collect::<String>();
                 let vec_s = vec_s.trim_end_matches(",");
                 write!(f, "(let {vec_s} in {expr})")
             },
-            LambdaExpr::CaseOf(s, hm) => {
+            LambdaExpr::CaseOf(_, s, hm) => {
                 let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
                 let vec_s = vec_s.trim_end_matches(",");
                 write!(f, "(case s{s}: {vec_s})")
             },
-            LambdaExpr::TryThen(first, second) => write!(f, "{first} █ {second}"),
+            LambdaExpr::TryThen(_, first, second) => write!(f, "{first} █ {second}"),
             LambdaExpr::FAIL => write!(f, "FAIL")
         }
     }
 }
 
-fn alpha_subst(hm: &HashMap<Arg, LambdaExpr<SymbolID>>, old: SymbolID, new: SymbolID) -> HashMap<Arg, LambdaExpr<SymbolID>> {
+fn alpha_subst(hm: &HashMap<Arg, LambdaExpr>, old: SymbolID, new: SymbolID) -> HashMap<Arg, LambdaExpr> {
     let mut new_hm = HashMap::new();
     for (arg, e) in hm.iter() {
         new_hm.insert(arg.alpha_subst(old, new), e.alpha_subst(old, new));
@@ -233,10 +240,10 @@ impl<T> std::iter::FromIterator<Changed<T>> for Changed<Vec<T>> {
     }
 }
 
-pub fn simp_case(e: LambdaExpr<SymbolID>) -> LambdaExpr<SymbolID> {
+pub fn simp_case(e: LambdaExpr) -> LambdaExpr {
     match e {
-        LambdaExpr::CaseOf(s, ref hm) => {
-            let vecify: Vec<(Arg, LambdaExpr<SymbolID>)> = hm.iter().map(|(a, e)| (a.clone(), e.clone())).collect();
+        LambdaExpr::CaseOf(_, s, ref hm) => {
+            let vecify: Vec<(Arg, LambdaExpr)> = hm.iter().map(|(a, e)| (a.clone(), e.clone())).collect();
             if vecify.len() == 1 {
                 let (a, e) = &vecify[0];
                 if let Arg::Atom(a) = a {

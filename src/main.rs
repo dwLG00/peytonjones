@@ -8,11 +8,13 @@ mod translate;
 mod treatment;
 mod aux;
 mod typecheck;
+mod typing;
 //use crate::lambda::{LambdaExpr, display, reduce_all};
 use crate::lambda::{LambdaExpr};
 use crate::lex::{lex};
 use crate::parse::{parse};
 use crate::translate::{translate};
+use crate::typing::{infer, TypeTable, identify};
 
 use std::fs::File;
 use std::error::Error;
@@ -52,6 +54,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         Ok(translations) => {
                             for (symbol, lambda) in translations.iter() {
                                 println!("{} => {}", symbol, lambda);
+                                let mut type_table = TypeTable::new();
+                                let maybe_t = infer(&mut type_table, &identify(lambda.clone()));
+                                match maybe_t {
+                                    Ok(t) => { println!("\t{} has type {:?}", symbol, t); },
+                                    Err(msg) => {
+                                        println!("Typing error: {}", msg);
+                                    }
+                                }
                             }
                         },
                         Err(msg) => {
