@@ -53,10 +53,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let translate_result = translate(statements, &mut ss);
                     match translate_result {
                         Ok(translations) => {
+                            let mut translations = translations.clone();
+                            translations.sort_by_key(|(s, _)| if *s == 0 { u32::MAX } else { *s });
                             for (symbol, lambda) in translations.iter() {
                                 println!("{} => {}", symbol, lambda);
                                 let mut type_table = TypeTable::new();
-                                let maybe_t = infer(&mut type_table, &identify(lambda.clone()));
+                                let identified = identify(lambda.clone());
+                                let maybe_t = infer(&mut type_table, &identified);
                                 match maybe_t {
                                     Ok(t) => { println!("\t{} has type {:?}", symbol, t); },
                                     Err(msg) => {
@@ -64,6 +67,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                             }
+                            /*
+                            let (symbol, lambda) = &translations[2];
+                            println!("{} => {}", symbol, lambda);
+                            let mut type_table = TypeTable::new();
+                            let identified = identify(lambda.clone());
+                            let maybe_t = infer(&mut type_table, &identified);
+                            match maybe_t {
+                                Ok(t) => { println!("\t{} has type {:?}", symbol, t); },
+                                Err(msg) => {
+                                    println!("Typing error: {}", msg);
+                                }
+                            }
+                            println!("Type Table: {:?}", type_table);
+                            */
                         },
                         Err(msg) => {
                             println!("Translation error: {}", msg)

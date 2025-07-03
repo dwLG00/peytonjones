@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::fmt;
 use disjoint::{DisjointSetVec, disjoint_set_vec};
 
 use crate::aux::join;
@@ -29,11 +30,66 @@ impl Type {
     }
 }
 
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Int => write!(f, "int"),
+            Self::String => write!(f, "str"),
+            Self::Bool => write!(f, "bool"),
+            Self::Func(t1, t2) => match **t1 {
+                Self::Func(_, _) => {
+                    write!(f, "({}) -> {}", t1, t2)
+                },
+                _ => write!(f, "{} -> {}", t1, t2)
+            },
+            Self::List(t) => write!(f, "[{}]", t),
+            Self::Infer(v) => write!(f, "T{}", v)
+        }
+    }
+}
+
 pub type ExprID = u32;
 pub type ExprTypeTable = HashMap<ExprID, Type>;
 pub type SymbolTypeMap = HashMap<SymbolID, Type>;
 pub type LambdaExprWithID = AnnotatedLambdaExpr<SymbolID, ExprID>;
 
+/*
+impl fmt::Display for LambdaExprWithID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StringTerm(t, s) => {
+                write!(f, "\"{s}\": {t}")
+            },
+            Self::IntTerm(t, n) => write!(f, "{n}: {t}"),
+            Self::BoolTerm(t, b) => if *b {
+                write!(f, "true: {t}")
+            } else {
+                write!(f, "false: {t}")
+            },
+            Self::VarTerm(t, s) => write!(f, "s{s}: {t}"),
+            Self::OpTerm(t, op) => write!(f, "{op}: {t}"),
+            Self::EmptyList(t) => write!(f, "[]: {t}"),
+            Self::ListCon(t, car, cdr) => write!(f, "[{car} : {cdr}]: {t}"),
+            Self::TermApplications(t, func, app) => write!(f, "({func} ({app})): {t}"),
+            Self::Lambda(t, s, expr) => write!(f, "(λs{s}. {expr}): {t}"),
+            Self::LetIn(t, vec, expr) => {
+                let vec_s = vec.iter().map(|(s, e)| format!("s{s} := {e},")).collect::<String>();
+                let vec_s = vec_s.trim_end_matches(",");
+                write!(f, "(let {vec_s} in {expr}): {t}")
+            },
+            Self::CaseOf(t, s, hm) => {
+                let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
+                let vec_s = vec_s.trim_end_matches(",");
+                write!(f, "(case s{s}: {vec_s}): {t}")
+            },
+            Self::TryThen(t, first, second) => write!(f, "({first} █ {second}): {t}"),
+            Self::FAIL => write!(f, "FAIL")
+        }
+    }
+}
+*/
+
+#[derive(Debug)]
 pub struct TypeTable {
     expr_table: ExprTypeTable,
     symbol_table: SymbolTypeMap,
@@ -51,18 +107,18 @@ impl TypeTable {
         }
     }
 
-    fn grab_infer(&mut self) -> Type {
+    pub fn grab_infer(&mut self) -> (u32, Type) {
         let temp = self.next_vartype;
         self.next_vartype += 1;
         self.variable_set.push(None);
-        Type::Infer(temp)
+        (temp, Type::Infer(temp))
     }
 
     fn insert_expr(&mut self, e: ExprID, t: Type) {
         self.expr_table.insert(e, t);
     }
 
-    fn insert_symbol(&mut self, s: SymbolID, t: Type) {
+    pub fn insert_symbol(&mut self, s: SymbolID, t: Type) {
         self.symbol_table.insert(s, t);
     }
 
@@ -84,6 +140,17 @@ impl TypeTable {
         match self.variable_set.get(root) {
             Some(t) => t,
             None => &None
+        }
+    }
+
+    fn get_variable_or_infer(&self, v: &u32) -> Type {
+        let root = self.variable_set.root_of(*v as usize);
+        match self.variable_set.get(root) {
+            Some(t) => match t {
+                Some(t) => t.clone(),
+                None => Type::Infer(root as u32)
+            },
+            None => Type::Infer(root as u32)
         }
     }
 
@@ -109,8 +176,15 @@ impl TypeTable {
         Ok(target_type)
     }
 
-    fn join_vars(&mut self, v1: u32, v2: u32) {
-        self.variable_set.join(v1 as usize, v2 as usize);
+    fn specify(&self, t: Type) -> Type {
+        match t {
+            Type::Infer(v) => self.get_variable_or_infer(&v),
+            Type::Int => Type::Int,
+            Type::String => Type::String,
+            Type::Bool => Type::Bool,
+            Type::List(t) => Type::List(Box::new(self.specify(*t))),
+            Type::Func(t1, t2) => Type::Func(Box::new(self.specify(*t1)), Box::new(self.specify(*t2)))
+        }
     }
 }
 
@@ -128,7 +202,11 @@ pub fn identify(s: LambdaExpr) -> LambdaExprWithID {
 fn unify(tt: &mut TypeTable, t1: Type, t2: Type) -> Result<Type, String> {
     match (t1.clone(), t2.clone()) {
         (Type::Infer(v1), Type::Infer(v2)) => {
-            tt.merge_variables(v1, v2)
+            if v1 == v2 {
+                Ok(tt.get_variable_or_infer(&v1))
+            } else {
+                tt.merge_variables(v1, v2)
+            }
         },
         (Type::Infer(v), _) => {
             match tt.get_variable(&v) {
@@ -190,9 +268,10 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
             Ok(op_type)
         },
         AnnotatedLambdaExpr::Lambda(id, s, expr) => {
-            let t = tt.grab_infer();
+            let (_, t) = tt.grab_infer();
             tt.insert_symbol(*s, t.clone());
             let t2 = infer(tt, expr)?;
+            let t = tt.specify(t);
             let my_type = Type::Func(Box::new(t), Box::new(t2));
             tt.insert_expr(*id, my_type.clone());
             Ok(my_type)
@@ -202,7 +281,7 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
                 Some(t) => t.clone(),
                 None => { 
                     //return Err(format!("[infer] Expected symbol `s{}` to have type, but none found in table", s)); 
-                    let temp = tt.grab_infer();
+                    let (_, temp) = tt.grab_infer();
                     tt.insert_symbol(*s, temp.clone());
                     temp
                 }
@@ -213,13 +292,14 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
         AnnotatedLambdaExpr::TermApplications(id, func, app) => {
             let func_type = infer(tt, func)?;
             let app_type = infer(tt, app)?;
-            let temp = tt.grab_infer();
+            let (_, temp) = tt.grab_infer();
             unify(tt, func_type, Type::Func(Box::new(app_type), Box::new(temp.clone())))?; // MAYBE WRONG
+            let temp = tt.specify(temp);
             tt.insert_expr(*id, temp.clone());
             Ok(temp)
         },
         AnnotatedLambdaExpr::EmptyList(id) => {
-            let temp = tt.grab_infer();
+            let (_, temp) = tt.grab_infer();
             let my_type = Type::List(Box::new(temp));
             tt.insert_expr(*id, my_type.clone());
             Ok(my_type)
@@ -228,6 +308,7 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
             let car_type = infer(tt, car)?;
             let cdr_type = infer(tt, cdr)?;
             unify(tt, cdr_type.clone(), Type::List(Box::new(car_type.clone())))?;
+            let cdr_type = tt.specify(cdr_type);
             tt.insert_expr(*id, cdr_type.clone());
             Ok(cdr_type)
         },
@@ -303,7 +384,7 @@ fn get_op_type(tt: &mut TypeTable, op: OpTerm) -> Type {
             ))
         ),
         OpTerm::Eq => {
-            let temp = tt.grab_infer();
+            let (_, temp) = tt.grab_infer();
             Type::Func(
                 Box::new(temp.clone()),
                 Box::new(Type::Func(
@@ -313,7 +394,7 @@ fn get_op_type(tt: &mut TypeTable, op: OpTerm) -> Type {
             )
         },
         OpTerm::IfElse => {
-            let temp = tt.grab_infer();
+            let (_, temp) = tt.grab_infer();
             Type::Func(
                 Box::new(Type::Bool),
                 Box::new(Type::Func(
@@ -331,7 +412,7 @@ fn get_op_type(tt: &mut TypeTable, op: OpTerm) -> Type {
 fn infer_arg(tt: &mut TypeTable, arg: &Arg) -> Result<Type, String> {
     match arg {
         Arg::EmptyList => {
-            let temp = tt.grab_infer();
+            let (_, temp) = tt.grab_infer();
             Ok(Type::List(Box::new(temp)))
         },
         Arg::ListCon(car, cdr) => {
@@ -345,7 +426,7 @@ fn infer_arg(tt: &mut TypeTable, arg: &Arg) -> Result<Type, String> {
             Atom::IntLit(_) => Ok(Type::Int),
             Atom::Term(s) => match tt.get_symbol(&s.0) {
                 Some(t) => Ok(t.clone()),
-                None => Ok(tt.grab_infer())
+                None => Ok(tt.grab_infer().1)
             }
         }
     }
