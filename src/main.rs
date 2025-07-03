@@ -7,14 +7,15 @@ mod parse;
 mod translate;
 mod treatment;
 mod aux;
-mod typecheck;
 mod typing;
+mod structures;
 //use crate::lambda::{LambdaExpr, display, reduce_all};
 use crate::lambda::{LambdaExpr};
 use crate::lex::{lex};
 use crate::parse::{parse};
 use crate::translate::{translate};
 use crate::typing::{infer, TypeTable, identify};
+use crate::structures::*;
 
 use std::fs::File;
 use std::error::Error;
@@ -29,6 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filename = &"/Users/dwall/peytonjones/test.txt".to_string();
 
     let mut file = File::open(filename)?;
+    /*
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
@@ -53,8 +55,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let translate_result = translate(statements, &mut ss);
                     match translate_result {
                         Ok(translations) => {
-                            let mut translations = translations.clone();
-                            translations.sort_by_key(|(s, _)| if *s == 0 { u32::MAX } else { *s });
                             let mut type_table = TypeTable::new();
                             for (symbol, lambda) in translations.iter() {
                                 println!("{} => {}", symbol, lambda);
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         println!("Typing error: {}", msg);
                                     }
                                 }
-                                type_table = type_table.spawn_with_context();
+                                type_table.clear_expr_table();
                             }
                             /*
                             let (symbol, lambda) = &translations[2];
@@ -98,6 +98,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         },
         Err(msg) => { println!("Lexing error: {}", msg); }
     }
+    */
+    let lexed = Lexed::from_file(&mut file)?;
+    let parsed = lexed.parse()?;
+    let translated = parsed.translate()?;
+    let type_checked = translated.type_check()?;
+    println!("{}", type_checked);
     Ok(())
-
 }

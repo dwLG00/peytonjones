@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::os::macos::raw::stat;
@@ -16,12 +17,18 @@ pub fn translate(statements: Vec<Statement>, ss: &mut SymbolStack) -> Result<Vec
 fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool) -> Result<Vec<(SymbolID, LambdaExpr)>, String> {
     let mut v: Vec<(SymbolID, LambdaExpr)> = Vec::new();
 
-    let (function_map, main_statement) = match create_function_map(&statements) {
+    let (function_map, main_statement) = match create_function_btree_map(statements) {
         Ok(hm) => hm,
         Err(s) => { return Err(s); }
     };
-    if !validate_function_map(&function_map) {
+    if !validate_function_btree_map(&function_map) {
         return Err(format!("[translate] Code contains function definitions with contrasting arity"));
+    }
+
+    for (symbol, body) in function_map.iter() {
+        v.push(
+            (*symbol, build_function_def(body.iter().map(|t| &t.0), body[0].1, ss)?)
+        );
     }
 
     if !in_let {
@@ -29,7 +36,7 @@ fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool)
             Some(main) => {
                 match main {
                     Statement::MainDef(e) => {
-                        v.push((0, expr_to_lambda(&e, ss)?))
+                        v.push((u32::MAX, expr_to_lambda(&e, ss)?))
                     },
                     _ => { return Err(format!("[translate] Expected main definition, got function definition"))}
                 }
@@ -38,12 +45,6 @@ fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool)
                 return Err(format!("[translate] No main definition found"));
             }
         }
-    }
-
-    for (symbol, body) in function_map.iter() {
-        v.push(
-            (*symbol, build_function_def(body.iter().map(|t| &t.0), body[0].1, ss)?)
-        );
     }
     Ok(v)
 }
@@ -64,9 +65,40 @@ fn create_function_map(statements: &Vec<Statement>) -> Result<(HashMap<SymbolID,
     Ok((statement_buckets, main_statement))
 }
 
+fn create_function_btree_map(statements: Vec<Statement>) -> Result<(BTreeMap<SymbolID, Vec<(Statement, usize)>>, Option<Statement>), String> {
+    let mut statement_buckets: BTreeMap<SymbolID, Vec<(Statement, usize)>> = BTreeMap::new();
+    let mut main_statement = None;
+    for statement in statements.into_iter() {
+        match statement {
+            Statement::MainDef(_) => { main_statement = Some(statement); },
+            Statement::FuncDef(s, ref args, _) => {
+                let arglen = args.len();
+                match statement_buckets.get_mut(&s.0) {
+                    Some(v) => { v.push((statement, arglen)) },
+                    None => { statement_buckets.insert(s.0, vec![(statement, arglen)]); }
+                }
+            }
+        }
+    }
+    Ok((statement_buckets, main_statement))
+}
+
 fn validate_function_map(hm: &HashMap<SymbolID, Vec<(Statement, usize)>>) -> bool {
     // Ensure that all function definitions for the same function have the same arity
     for (_, statement_vec) in hm.iter() {
+        if statement_vec.len() > 1 { // If only 1 definition, then arity should already be correct
+            let first_arity = statement_vec[0].1;
+            let all_same_arity = statement_vec.iter().all(|(_, arity)| *arity == first_arity);
+            if !all_same_arity {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn validate_function_btree_map(bm: &BTreeMap<SymbolID, Vec<(Statement, usize)>>) -> bool {
+    for (_, statement_vec) in bm.iter() {
         if statement_vec.len() > 1 { // If only 1 definition, then arity should already be correct
             let first_arity = statement_vec[0].1;
             let all_same_arity = statement_vec.iter().all(|(_, arity)| *arity == first_arity);

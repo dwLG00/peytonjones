@@ -7,7 +7,7 @@ use crate::expr::{Atom, Arg, Binop};
 use crate::symbols::{Symbol, SymbolID, AlphaSubbable};
 use crate::aux::Recursible;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum AnnotatedLambdaExpr<S, N> where S: Copy, N: Copy {
     StringTerm(N, String),
     IntTerm(N, u32),
@@ -44,6 +44,18 @@ impl<S: Copy, N: Copy> AnnotatedLambdaExpr<S, N> {
             Self::CaseOf(n, s, hm) => AnnotatedLambdaExpr::CaseOf(f(n), s, hm.into_iter().map(|(arg, e)| (arg, e.map(f))).collect()),
             Self::TryThen(n, expr1, expr2) => AnnotatedLambdaExpr::TryThen(f(n), Box::new(expr1.map(f)), Box::new(expr2.map(f))),
             Self::FAIL => AnnotatedLambdaExpr::FAIL
+        }
+    }
+
+    pub fn map_node<N2, F>(&self, f: F) -> Option<N2>
+        where F: FnOnce(N) -> N2
+    {
+        match self {
+            Self::StringTerm(n, _) | Self::IntTerm(n, _) | Self::BoolTerm(n, _)
+            | Self::VarTerm(n, _) | Self::OpTerm(n, _) | Self::EmptyList(n)
+            | Self::ListCon(n, _, _) | Self::TermApplications(n, _, _) | Self::Lambda(n, _, _)
+            | Self::LetIn(n, _, _) | Self::CaseOf(n, _, _) | Self::TryThen(n, _, _) => Some(f(*n)),
+            Self::FAIL => None
         }
     }
 }
@@ -95,44 +107,44 @@ impl AlphaSubbable for LambdaExpr {
     }
 }
 
-impl fmt::Display for LambdaExpr {
+impl<N> fmt::Display for AnnotatedLambdaExpr<SymbolID, N> where N: Copy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             //LambdaExpr::SimpleTerm(s) => write!(f, "{s}"),
-            LambdaExpr::StringTerm(_, s) => write!(f, "\"{s}\""),
-            LambdaExpr::IntTerm(_, n) => write!(f, "{n}"),
-            LambdaExpr::BoolTerm(_, b) => if *b {
+            Self::StringTerm(_, s) => write!(f, "\"{s}\""),
+            Self::IntTerm(_, n) => write!(f, "{n}"),
+            Self::BoolTerm(_, b) => if *b {
                 write!(f, "true")
             } else {
                 write!(f, "false")
             },
-            LambdaExpr::VarTerm(_, s) => write!(f, "s{s}"),
-            LambdaExpr::OpTerm(_, op) => write!(f, "{op}"),
-            LambdaExpr::EmptyList(_) => write!(f, "[]"),
-            LambdaExpr::ListCon(_, car, cdr) => write!(f, "{car} : {cdr}"),
-            LambdaExpr::TermApplications(_, func, app) => {
+            Self::VarTerm(_, s) => write!(f, "s{s}"),
+            Self::OpTerm(_, op) => write!(f, "{op}"),
+            Self::EmptyList(_) => write!(f, "[]"),
+            Self::ListCon(_, car, cdr) => write!(f, "{car} : {cdr}"),
+            Self::TermApplications(_, func, app) => {
                 match **app {
                     //LambdaExpr::SimpleTerm(_) => write!(f, "{func} {app}"),
-                    LambdaExpr::StringTerm(_, _) | LambdaExpr::BoolTerm(_, _) 
-                        | LambdaExpr::IntTerm(_, _) | LambdaExpr::VarTerm(_, _) => write!(f, "{func} {app}"),
+                    Self::StringTerm(_, _) | Self::BoolTerm(_, _) 
+                        | Self::IntTerm(_, _) | Self::VarTerm(_, _) => write!(f, "{func} {app}"),
                     _ => write!(f, "{func} ({app})")
                 }
             },
-            LambdaExpr::Lambda(_, s, expr) => {
+            Self::Lambda(_, s, expr) => {
                 write!(f, "(λs{s}. {expr})")
             },
-            LambdaExpr::LetIn(_, vec, expr) => {
+            Self::LetIn(_, vec, expr) => {
                 let vec_s = vec.iter().map(|(s, e)| format!("s{s} := {e},")).collect::<String>();
                 let vec_s = vec_s.trim_end_matches(",");
                 write!(f, "(let {vec_s} in {expr})")
             },
-            LambdaExpr::CaseOf(_, s, hm) => {
+            Self::CaseOf(_, s, hm) => {
                 let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
                 let vec_s = vec_s.trim_end_matches(",");
                 write!(f, "(case s{s}: {vec_s})")
             },
-            LambdaExpr::TryThen(_, first, second) => write!(f, "{first} █ {second}"),
-            LambdaExpr::FAIL => write!(f, "FAIL")
+            Self::TryThen(_, first, second) => write!(f, "{first} █ {second}"),
+            Self::FAIL => write!(f, "FAIL")
         }
     }
 }
@@ -183,6 +195,12 @@ impl fmt::Display for OpTerm {
             OpTerm::Eq => write!(f, "="),
             OpTerm::IfElse => write!(f, "if")
         }
+    }
+}
+
+impl fmt::Debug for OpTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt::Display::fmt(&self, f)
     }
 }
 

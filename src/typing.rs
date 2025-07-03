@@ -7,7 +7,7 @@ use crate::aux::join;
 use crate::expr::{Arg, Atom};
 use crate::lambda::{AnnotatedLambdaExpr, LambdaExpr, OpTerm};
 use crate::symbols::{Symbol, SymbolID};
-use crate::typecheck::TypedLambdaExpr;
+
 
 #[derive(Clone, Debug)]
 pub enum Type {
@@ -53,6 +53,18 @@ pub type ExprTypeTable = HashMap<ExprID, Type>;
 pub type SymbolTypeMap = HashMap<SymbolID, Type>;
 pub type LambdaExprWithID = AnnotatedLambdaExpr<SymbolID, ExprID>;
 
+impl LambdaExprWithID {
+    pub fn get_type(&self, tt: &TypeTable) -> Type {
+        let t = self.map_node(|id| {
+            let t = tt.get_expr(&id).cloned();
+            //println!("{}, {:?}", id, t);
+            t
+        });
+        let unwrapped = t.unwrap();
+        unwrapped.unwrap()
+    }
+}
+
 /*
 impl fmt::Display for LambdaExprWithID {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -89,12 +101,13 @@ impl fmt::Display for LambdaExprWithID {
 }
 */
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeTable {
     expr_table: ExprTypeTable,
     symbol_table: SymbolTypeMap,
     variable_set: DisjointSetVec<Option<Type>>,
-    next_vartype: u32
+    next_vartype: u32,
+    next_expr: u32
 }
 
 impl TypeTable {
@@ -103,17 +116,13 @@ impl TypeTable {
             expr_table: ExprTypeTable::new(),
             symbol_table: SymbolTypeMap::new(),
             variable_set: DisjointSetVec::new(),
-            next_vartype: 0
+            next_vartype: 0,
+            next_expr: 0
         }
     }
 
-    pub fn spawn_with_context(&self) -> TypeTable {
-        TypeTable {
-            expr_table: ExprTypeTable::new(),
-            symbol_table: self.symbol_table.clone(),
-            variable_set: self.variable_set.clone(),
-            next_vartype: self.next_vartype
-        }
+    pub fn clear_expr_table(&mut self) {
+        self.expr_table.clear();
     }
 
     pub fn grab_infer(&mut self) -> (u32, Type) {
@@ -136,7 +145,7 @@ impl TypeTable {
         self.variable_set[root] = Some(t);
     }
 
-    fn get_expr(&self, e: &ExprID) -> Option<&Type> {
+    pub fn get_expr(&self, e: &ExprID) -> Option<&Type> {
         self.expr_table.get(e)
     }
 
@@ -203,12 +212,11 @@ impl TypeTable {
     }
 }
 
-pub fn identify(s: LambdaExpr) -> LambdaExprWithID {
+pub fn identify(s: LambdaExpr, tt: &mut TypeTable) -> LambdaExprWithID {
     // Return AST with the same 
-    let mut counter: u32 = 0;
     let mut register_node = |_| {
-        let temp = counter;
-        counter += 1;
+        let temp = tt.next_expr;
+        tt.next_expr += 1;
         temp
     };
     s.map(&mut register_node)

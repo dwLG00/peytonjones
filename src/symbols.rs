@@ -44,6 +44,7 @@ impl AlphaSubbable for Symbol {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SymbolStack {
     stack : Vec<SymbolTable>,
     next_u32 : u32
