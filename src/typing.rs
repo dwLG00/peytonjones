@@ -107,6 +107,15 @@ impl TypeTable {
         }
     }
 
+    pub fn spawn_with_context(&self) -> TypeTable {
+        TypeTable {
+            expr_table: ExprTypeTable::new(),
+            symbol_table: self.symbol_table.clone(),
+            variable_set: self.variable_set.clone(),
+            next_vartype: self.next_vartype
+        }
+    }
+
     pub fn grab_infer(&mut self) -> (u32, Type) {
         let temp = self.next_vartype;
         self.next_vartype += 1;
@@ -164,15 +173,21 @@ impl TypeTable {
         self.variable_set.join(v1 as usize, v2 as usize);
 
         let root = Type::Infer(self.get_root(v1));
-        let target_type: Type = match (t1, t2) {
+        let target_type: Option<Type> = match (t1, t2) {
             (Some(t1), Some(t2)) => {
-                unify(self, t1.clone(), t2.clone())?
+                Some(unify(self, t1.clone(), t2.clone())?)
             },
-            (Some(t), None) => t.clone(),
-            (None, Some(t)) => t.clone(),
-            (None, None) => root
+            (Some(t), None) => Some(t.clone()),
+            (None, Some(t)) => Some(t.clone()),
+            (None, None) => None
         };
-        self.set_variable(v1, target_type.clone());
+        let target_type = match target_type {
+            Some(t) => {
+                self.set_variable(v1, t.clone());
+                t
+            },
+            None => root
+        };
         Ok(target_type)
     }
 

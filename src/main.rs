@@ -55,17 +55,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                         Ok(translations) => {
                             let mut translations = translations.clone();
                             translations.sort_by_key(|(s, _)| if *s == 0 { u32::MAX } else { *s });
+                            let mut type_table = TypeTable::new();
                             for (symbol, lambda) in translations.iter() {
                                 println!("{} => {}", symbol, lambda);
-                                let mut type_table = TypeTable::new();
                                 let identified = identify(lambda.clone());
                                 let maybe_t = infer(&mut type_table, &identified);
                                 match maybe_t {
-                                    Ok(t) => { println!("\t{} has type {:?}", symbol, t); },
+                                    Ok(t) => {
+                                        println!("\t{} has type {:?}", symbol, t);
+                                        type_table.insert_symbol(*symbol, t);
+                                    },
                                     Err(msg) => {
                                         println!("Typing error: {}", msg);
                                     }
                                 }
+                                type_table = type_table.spawn_with_context();
                             }
                             /*
                             let (symbol, lambda) = &translations[2];
