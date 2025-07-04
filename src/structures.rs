@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::write;
 use std::fmt::Write;
 use std::fs::File;
@@ -35,7 +36,8 @@ pub struct Translated {
 
 #[derive(Debug, Clone)]
 pub struct TypeChecked {
-    function_defs: Vec<(u32, lambda::AnnotatedLambdaExpr<symbols::SymbolID, typing::ExprID>)>,
+    //function_defs: Vec<(u32, lambda::AnnotatedLambdaExpr<symbols::SymbolID, typing::ExprID>)>,
+    function_defs: BTreeMap<u32, lambda::AnnotatedLambdaExpr<symbols::SymbolID, typing::ExprID>>,
     symbol_stack: symbols::SymbolStack,
     type_table: typing::TypeTable
 }
@@ -72,7 +74,7 @@ impl Parsed {
 impl Translated {
     pub fn type_check(self) -> Result<TypeChecked, String> {
         let mut type_table = typing::TypeTable::new();
-        let mut typechecked_function_defs = Vec::new();
+        let mut typechecked_function_defs = BTreeMap::new();
         for (symbol, lambda) in self.function_defs.into_iter() {
             let identified = typing::identify(lambda, &mut type_table);
             let t = typing::infer(&mut type_table, &identified)?;
@@ -82,7 +84,7 @@ impl Translated {
             if !typing::valid_type(&t) {
                 return Err(format!("[Translated::type_check] Type {} belonging to expression `s{} = {}` is invalid", t, symbol, identified));
             }
-            typechecked_function_defs.push((symbol, identified));
+            typechecked_function_defs.insert(symbol, identified);
         }
         Ok(TypeChecked{
             function_defs: typechecked_function_defs,
