@@ -28,6 +28,19 @@ impl Type {
             Self::Infer(id) => f(*id)
         }
     }
+
+    fn get_infers(&self) -> Vec<u32> {
+        match self {
+            Self::Int | Self::String | Self::Bool => vec![],
+            Self::List(t) => t.get_infers(),
+            Self::Func(t1, t2) => {
+                let mut v = t1.get_infers();
+                v.extend_from_slice(&t2.get_infers());
+                v
+            },
+            Self::Infer(i) => vec![*i]
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -64,42 +77,6 @@ impl LambdaExprWithID {
         unwrapped.unwrap()
     }
 }
-
-/*
-impl fmt::Display for LambdaExprWithID {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::StringTerm(t, s) => {
-                write!(f, "\"{s}\": {t}")
-            },
-            Self::IntTerm(t, n) => write!(f, "{n}: {t}"),
-            Self::BoolTerm(t, b) => if *b {
-                write!(f, "true: {t}")
-            } else {
-                write!(f, "false: {t}")
-            },
-            Self::VarTerm(t, s) => write!(f, "s{s}: {t}"),
-            Self::OpTerm(t, op) => write!(f, "{op}: {t}"),
-            Self::EmptyList(t) => write!(f, "[]: {t}"),
-            Self::ListCon(t, car, cdr) => write!(f, "[{car} : {cdr}]: {t}"),
-            Self::TermApplications(t, func, app) => write!(f, "({func} ({app})): {t}"),
-            Self::Lambda(t, s, expr) => write!(f, "(λs{s}. {expr}): {t}"),
-            Self::LetIn(t, vec, expr) => {
-                let vec_s = vec.iter().map(|(s, e)| format!("s{s} := {e},")).collect::<String>();
-                let vec_s = vec_s.trim_end_matches(",");
-                write!(f, "(let {vec_s} in {expr}): {t}")
-            },
-            Self::CaseOf(t, s, hm) => {
-                let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
-                let vec_s = vec_s.trim_end_matches(",");
-                write!(f, "(case s{s}: {vec_s}): {t}")
-            },
-            Self::TryThen(t, first, second) => write!(f, "({first} █ {second}): {t}"),
-            Self::FAIL => write!(f, "FAIL")
-        }
-    }
-}
-*/
 
 #[derive(Debug, Clone)]
 pub struct TypeTable {
@@ -452,5 +429,22 @@ fn infer_arg(tt: &mut TypeTable, arg: &Arg) -> Result<Type, String> {
                 None => Ok(tt.grab_infer().1)
             }
         }
+    }
+}
+
+pub fn valid_type(t: &Type) -> bool {
+    let mut context = Vec::new();
+    valid_type_aux(t, &mut context)
+}
+
+fn valid_type_aux(t: &Type, context: &mut Vec<u32>) -> bool {
+    match t {
+        Type::Bool | Type::Int | Type::String => true,
+        Type::List(t) => valid_type_aux(t, context),
+        Type::Func(t1, t2) => {
+            context.extend_from_slice(&t1.get_infers());
+            valid_type_aux(t2, context)
+        },
+        Type::Infer(i) => context.contains(i)
     }
 }

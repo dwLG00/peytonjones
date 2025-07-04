@@ -69,6 +69,8 @@ impl Translated {
             let identified = typing::identify(lambda, &mut type_table);
             let t = typing::infer(&mut type_table, &identified)?;
             type_table.insert_symbol(symbol, t);
+            // Handle recursive case
+            typing::infer(&mut type_table, &identified)?;
             typechecked_function_defs.push((symbol, identified));
         }
         Ok(TypeChecked{
@@ -84,9 +86,10 @@ impl fmt::Display for TypeChecked {
         let mut buf = String::new();
         for (symbol, lambda) in self.function_defs.iter() {
             let t = lambda.get_type(&self.type_table);
-            buf.write_fmt(format_args!("s{} :: {}\n", symbol, t))?;
+            let validity = if typing::valid_type(&t) { "is valid" } else { "invalid" };
+            buf.write_fmt(format_args!("s{} :: {} ({})\n", symbol, t, validity))?;
             buf.write_fmt(format_args!("s{} => {}\n\n", symbol, lambda))?;
         }
         write!(f, "{}", buf)
-    }   
+    }
 }
