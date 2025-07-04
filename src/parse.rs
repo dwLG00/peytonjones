@@ -521,6 +521,7 @@ fn parse_arg_list<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack) -> Result<A
         None => Err(format!("[parse_arg_list] @End, Hit EOF")),
         Some((_, token)) => match token {
             Token::RBracket => { // Empty list
+                it.next(); // Skip next
                 Ok(Arg::EmptyList)
             },
             _ => { // Parse as an arg

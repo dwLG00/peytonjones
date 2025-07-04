@@ -1,3 +1,4 @@
+use std::fmt::write;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::BufRead;
@@ -53,6 +54,13 @@ impl Lexed {
     }
 }
 
+impl fmt::Display for Lexed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let v: Vec<(usize, &tokens::Token)> = self.tokens.iter().enumerate().collect();
+        write!(f, "{:?}", v)
+    }
+}
+
 impl Parsed {
     pub fn translate(self) -> Result<Translated, String> {
         let mut ss = self.symbol_stack;
@@ -70,7 +78,10 @@ impl Translated {
             let t = typing::infer(&mut type_table, &identified)?;
             type_table.insert_symbol(symbol, t);
             // Handle recursive case
-            typing::infer(&mut type_table, &identified)?;
+            let t = typing::infer(&mut type_table, &identified)?;
+            if !typing::valid_type(&t) {
+                return Err(format!("[Translated::type_check] Type {} belonging to expression `s{} = {}` is invalid", t, symbol, identified));
+            }
             typechecked_function_defs.push((symbol, identified));
         }
         Ok(TypeChecked{

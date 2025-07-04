@@ -100,6 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     */
     let lexed = Lexed::from_file(&mut file)?;
+    println!("{}", lexed);
     let parsed = lexed.parse()?;
     let translated = parsed.translate()?;
     let type_checked = translated.type_check()?;
