@@ -25,5 +25,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let translated = parsed.translate()?;
     let type_checked = translated.type_check()?;
     println!("{}", type_checked);
+    //println!("{:?}", type_checked);
     Ok(())
 }

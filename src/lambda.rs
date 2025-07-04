@@ -47,6 +47,38 @@ impl<S: Copy, N: Copy> AnnotatedLambdaExpr<S, N> {
         }
     }
 
+    pub fn at_node<F, E>(&self, f: &mut F) -> Result<(), E>
+        where F: FnMut(N) -> Result<(), E>
+    {
+        match self {
+            Self::StringTerm(n, _) | Self::IntTerm(n, _) | Self::BoolTerm(n, _) 
+            | Self::VarTerm(n, _) | Self::OpTerm(n, _) | Self::EmptyList(n) => f(*n),
+            Self::ListCon(n, expr1, expr2) | Self::TermApplications(n, expr1, expr2) | Self::TryThen(n, expr1, expr2) => {
+                expr1.at_node(f)?;
+                expr2.at_node(f)?;
+                f(*n)
+            },
+            Self::Lambda(n, _, expr) => {
+                expr.at_node(f)?;
+                f(*n)
+            },
+            Self::LetIn(n, v, expr) => {
+                for (_, e) in v.iter() {
+                    e.at_node(f)?;
+                }
+                expr.at_node(f)?;
+                f(*n)
+            },
+            Self::CaseOf(n, _, hm) => {
+                for (_, e) in hm.iter() {
+                    e.at_node(f)?;
+                }
+                f(*n)
+            },
+            Self::FAIL => Ok(())
+        }
+    }
+
     pub fn map_node<N2, F>(&self, f: F) -> Option<N2>
         where F: FnOnce(N) -> N2
     {

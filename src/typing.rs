@@ -432,6 +432,16 @@ fn infer_arg(tt: &mut TypeTable, arg: &Arg) -> Result<Type, String> {
     }
 }
 
+pub fn correct(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<(), String> {
+    expr.at_node(&mut |exprid| {
+        let t = tt.get_expr(&exprid).ok_or(format!("[correct] Expression with id {} doesn't have corresponding type", exprid))?;
+        let t = tt.specify(t.clone());
+        tt.insert_expr(exprid, t);
+        Ok::<(), String>(())
+    })?;
+    Ok(())
+}
+
 pub fn valid_type(t: &Type) -> bool {
     let mut context = Vec::new();
     valid_type_aux(t, &mut context)
