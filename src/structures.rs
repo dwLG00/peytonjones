@@ -78,13 +78,17 @@ impl Translated {
         for (symbol, lambda) in self.function_defs.into_iter() {
             let identified = typing::identify(lambda, &mut type_table);
             let t = typing::infer(&mut type_table, &identified)?;
+            //typing::infer_d(&mut type_table, &identified, 0)?;
             // Handle recursive case
-            let t = typing::infer(&mut type_table, &identified)?;
-            //typing::correct(&mut type_table, &identified)?;
+            //let t = typing::infer_d(&mut type_table, &identified, 0)?;
+            //let t = typing::infer(&mut type_table, &identified)?;
+            typing::correct(&mut type_table, &identified)?;
+            let t = identified.get_type(&type_table);
+            //println!("Got type {t} for {identified}");
             if !typing::valid_type(&t) {
                 return Err(format!("[Translated::type_check] Type {} belonging to expression `s{} = {}` is invalid", t, symbol, identified));
             }
-            type_table.insert_symbol(symbol, t);
+            type_table.insert_global_symbol(symbol, t);
             typechecked_function_defs.insert(symbol, identified);
         }
         Ok(TypeChecked{

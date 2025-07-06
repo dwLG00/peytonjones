@@ -6,7 +6,7 @@ use disjoint::{DisjointSetVec, disjoint_set_vec};
 use crate::aux::join;
 use crate::expr::{Arg, Atom};
 use crate::lambda::{AnnotatedLambdaExpr, LambdaExpr, OpTerm};
-use crate::symbols::{Symbol, SymbolID};
+use crate::symbols::{Symbol, SymbolID, SymbolTable};
 
 
 #[derive(Clone, Debug)]
@@ -69,7 +69,7 @@ pub type LambdaExprWithID = AnnotatedLambdaExpr<SymbolID, ExprID>;
 impl LambdaExprWithID {
     pub fn get_type(&self, tt: &TypeTable) -> Type {
         let t = self.map_node(|id| {
-            let t = tt.get_expr(&id).cloned();
+            let t = tt.get_expr_specify(&id);
             //println!("{}, {:?}", id, t);
             t
         });
@@ -82,6 +82,7 @@ impl LambdaExprWithID {
 pub struct TypeTable {
     expr_table: ExprTypeTable,
     symbol_table: SymbolTypeMap,
+    global_symbol_table: SymbolTypeMap,
     variable_set: DisjointSetVec<Option<Type>>,
     next_vartype: u32,
     next_expr: u32
@@ -92,14 +93,11 @@ impl TypeTable {
         TypeTable {
             expr_table: ExprTypeTable::new(),
             symbol_table: SymbolTypeMap::new(),
+            global_symbol_table: SymbolTypeMap::new(),
             variable_set: DisjointSetVec::new(),
             next_vartype: 0,
             next_expr: 0
         }
-    }
-
-    pub fn clear_expr_table(&mut self) {
-        self.expr_table.clear();
     }
 
     pub fn grab_infer(&mut self) -> (u32, Type) {
@@ -117,6 +115,10 @@ impl TypeTable {
         self.symbol_table.insert(s, t);
     }
 
+    pub fn insert_global_symbol(&mut self, s: SymbolID, t: Type) {
+        self.global_symbol_table.insert(s, t);
+    }
+
     fn set_variable(&mut self, v: u32, t: Type) {
         let root = self.variable_set.root_of(v as usize);
         self.variable_set[root] = Some(t);
@@ -126,8 +128,27 @@ impl TypeTable {
         self.expr_table.get(e)
     }
 
+    pub fn get_expr_specify(&self, e: &ExprID) -> Option<Type> {
+        let t = self.get_expr(e)?;
+        Some(self.specify(t.clone()))
+    }
+
     fn get_symbol(&self, s: &SymbolID) -> Option<&Type> {
         self.symbol_table.get(s)
+    }
+
+    fn get_symbol_safe(&mut self, s: &SymbolID) -> Option<Type> {
+        let res = self.get_symbol(s).cloned();
+        match res {
+            None => {
+                let res2 = self.global_symbol_table.get(s).cloned();
+                match res2 {
+                    Some(t) => Some(self.clone_with_new_vars(&t)),
+                    None => None
+                }
+            },
+            t => t
+        }
     }
 
     fn get_variable(&self, v: &u32) -> &Option<Type> {
@@ -151,6 +172,37 @@ impl TypeTable {
 
     fn get_root(&self, v: u32) -> u32 {
         self.variable_set.root_of(v as usize) as u32
+    }
+
+    fn is_same_var(&self, v1: u32, v2: u32) -> bool {
+        self.variable_set.is_joined(v1 as usize, v2 as usize)
+    }
+
+    fn clone_with_new_vars(&mut self, t: &Type) -> Type {
+        let mut hm = HashMap::new();
+        self.clone_with_new_vars_aux(&mut hm, t)
+    }
+
+    fn clone_with_new_vars_aux(&mut self, hm: &mut HashMap<u32, u32>, t: &Type) -> Type {
+        match t {
+            Type::String | Type::Int | Type::Bool => t.clone(),
+            Type::List(t) => Type::List(Box::new(self.clone_with_new_vars_aux(hm, t))),
+            Type::Func(t1, t2) => {
+                let t1_ = self.clone_with_new_vars_aux(hm, t1);
+                let t2_ = self.clone_with_new_vars_aux(hm, t2);
+                Type::Func(Box::new(t1_), Box::new(t2_))
+            },
+            Type::Infer(v) => {
+                match hm.get(v) {
+                    Some(replacement) => Type::Infer(*replacement),
+                    None => {
+                        let (new_type_id, new_type) = self.grab_infer();
+                        hm.insert(*v, new_type_id);
+                        new_type
+                    }
+                }
+            }
+        }
     }
 
     fn merge_variables(&mut self, v1: u32, v2: u32) -> Result<Type, String> {
@@ -202,8 +254,9 @@ pub fn identify(s: LambdaExpr, tt: &mut TypeTable) -> LambdaExprWithID {
 fn unify(tt: &mut TypeTable, t1: Type, t2: Type) -> Result<Type, String> {
     match (t1.clone(), t2.clone()) {
         (Type::Infer(v1), Type::Infer(v2)) => {
-            if v1 == v2 {
-                Ok(tt.get_variable_or_infer(&v1))
+            if tt.is_same_var(v1, v2) {
+                let t = tt.get_variable_or_infer(&v1);
+                Ok(t)
             } else {
                 tt.merge_variables(v1, v2)
             }
@@ -277,9 +330,9 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
             Ok(my_type)
         },
         AnnotatedLambdaExpr::VarTerm(id, s) => {
-            let t = match tt.get_symbol(s) {
+            let t = match tt.get_symbol_safe(s) {
                 Some(t) => t.clone(),
-                None => { 
+                None => {
                     //return Err(format!("[infer] Expected symbol `s{}` to have type, but none found in table", s)); 
                     let (_, temp) = tt.grab_infer();
                     tt.insert_symbol(*s, temp.clone());
@@ -334,7 +387,7 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
                 let (h, b) = first;
                 first = (unify(tt, h, head)?, unify(tt, b, body)?);
             }
-            let head_type = match tt.get_symbol(s) {
+            let head_type = match tt.get_symbol_safe(s) {
                 Some(head) => {
                     unify(tt, head.clone(), first.0)?
                 },
@@ -366,6 +419,291 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
         }
     }
 }
+
+// ===================== DEBUGGING CODE ======================
+
+fn unify_d(tt: &mut TypeTable, t1: Type, t2: Type, n: usize) -> Result<Type, String> {
+    let tabs = "  ".repeat(n);
+    println!("{tabs}Unifying {t1} and {t2}...");
+    match (t1.clone(), t2.clone()) {
+        (Type::Infer(v1), Type::Infer(v2)) => {
+            if tt.is_same_var(v1, v2) {
+                let t = tt.get_variable_or_infer(&v1);
+                println!("{tabs}[u] T{v1} and T{v2} both point to {t}");
+                Ok(t)
+            } else {
+                println!("{tabs}[u] Found different variables T{v1} and T{v2}, hence merging");
+                tt.merge_variables(v1, v2)
+            }
+        },
+        (Type::Infer(v), _) => {
+            match tt.get_variable(&v) {
+                Some(t) => {
+                    println!("{tabs}[u] Found that T{v} points to {t}...");
+                    unify_d(tt, t.clone(), t2, n+1)
+                },
+                None => {
+                    println!("{tabs}[u] T{v} doesn't point to anything, so T{v} := {t2}");
+                    tt.set_variable(v, t2.clone());
+                    Ok(t2)
+                }
+            }
+        },
+        (_, Type::Infer(v)) => {
+            match tt.get_variable(&v) {
+                Some(t) => {
+                    println!("{tabs}[u] Found that T{v} points to {t}...");
+                    unify_d(tt, t.clone(), t1, n+1)
+                },
+                None => {
+                    println!("{tabs}[u] T{v} doesn't point to anything, so T{v} := {t1}");
+                    tt.set_variable(v, t1.clone());
+                    Ok(t1)
+                }
+            }
+        },
+        (Type::List(t1), Type::List(t2)) => {
+            println!("{tabs}[u] Both lists, so unwrapping...");
+            let inner = unify_d(tt, *t1, *t2, n+1)?;
+            Ok(Type::List(Box::new(inner)))
+        },
+        (Type::Func(t1a, t1b), Type::Func(t2a, t2b)) => {
+            println!("{tabs}[u] Both functions, so unwrapping...");
+            let func = unify_d(tt, *t1a, *t2a, n+1)?;
+            let app = unify_d(tt, *t1b, *t2b, n+1)?;
+            Ok(Type::Func(Box::new(func), Box::new(app)))
+        },
+        (Type::Bool, Type::Bool) => {
+            println!("{tabs}[u] Both bools!");
+            Ok(Type::Bool)
+        },
+        (Type::Int, Type::Int) => {
+            println!("{tabs}[u] Both ints!");
+            Ok(Type::Int)
+        },
+        (Type::String, Type::String) => {
+            println!("{tabs}[u] Both strings!");
+            Ok(Type::String)
+        },
+        _ => {
+            Err(format!("[unify] Failed to unify {:?} and {:?}", t1, t2))
+        }
+    }
+}
+
+pub fn infer_d(tt: &mut TypeTable, expr: &LambdaExprWithID, n: usize) -> Result<Type, String> {
+    let tabs = "  ".repeat(n);
+    println!("{tabs}Inferring {expr}...");
+    let res = match expr {
+        AnnotatedLambdaExpr::StringTerm(id, _) => {
+            tt.insert_expr(*id, Type::String);
+            println!("{tabs}[i] It's a string");
+            Ok(Type::String)
+        },
+        AnnotatedLambdaExpr::IntTerm(id, _) => {
+            tt.insert_expr(*id, Type::Int);
+            println!("{tabs}[i] It's an int");
+            Ok(Type::Int)
+        },
+        AnnotatedLambdaExpr::BoolTerm(id, _) => {
+            tt.insert_expr(*id, Type::Bool);
+            println!("{tabs}[i] It's a bool");
+            Ok(Type::Bool)
+        },
+        AnnotatedLambdaExpr::OpTerm(id, op) => {
+            let op_type = get_op_type(tt, *op);
+            tt.insert_expr(*id, op_type.clone());
+            println!("{tabs}[i] It's an op - specifically {}", op_type);
+            Ok(op_type)
+        },
+        AnnotatedLambdaExpr::Lambda(id, s, expr) => {
+            let (_, t) = tt.grab_infer();
+            tt.insert_symbol(*s, t.clone());
+            println!("{tabs}[i] It's a lambda s{s} - say {t}");
+            let t2 = infer_d(tt, expr, n+1)?;
+            let t = tt.specify(t);
+            println!("{tabs}[i] Figured out that the body should be {t2}, and the head should be {t}");
+            let my_type = Type::Func(Box::new(t), Box::new(t2));
+            println!("{tabs}[i] so {my_type}");
+            tt.insert_expr(*id, my_type.clone());
+            Ok(my_type)
+        },
+        AnnotatedLambdaExpr::VarTerm(id, s) => {
+            println!("{tabs}[i] Checking what it points to...");
+            let t = match tt.get_symbol_safe(s) {
+                Some(t) => {
+                    println!("{tabs}[i] It's {t}");
+                    t.clone()
+                },
+                None => {
+                    //return Err(format!("[infer] Expected symbol `s{}` to have type, but none found in table", s)); 
+                    let (_, temp) = tt.grab_infer();
+                    println!("{tabs}[i] It's an unspecified variable - say {temp}");
+                    tt.insert_symbol(*s, temp.clone());
+                    temp
+                }
+            };
+            tt.insert_expr(*id, t.clone());
+            Ok(t)
+        },
+        AnnotatedLambdaExpr::TermApplications(id, func, app) => {
+            println!("{tabs}[i] It's a term application...");
+            println!("{tabs}[i] Inferring func...");
+            let func_type = infer_d(tt, func, n+1)?;
+            println!("{tabs}[i] Inferring app...");
+            let app_type = infer_d(tt, app, n+1)?;
+            let (_, temp) = tt.grab_infer();
+            println!("{tabs}[i]Unifying...");
+            unify_d(tt, func_type, Type::Func(Box::new(app_type), Box::new(temp.clone())), n+1)?; // MAYBE WRONG
+            println!("{tabs}[i] Specifying {temp}...");
+            let temp = tt.specify(temp);
+            println!("{tabs}[i] Inferred that the application should be {temp}");
+            tt.insert_expr(*id, temp.clone());
+            Ok(temp)
+        },
+        AnnotatedLambdaExpr::EmptyList(id) => {
+            let (_, temp) = tt.grab_infer();
+            let my_type = Type::List(Box::new(temp));
+            println!("{tabs}[i] It's an empty list - say {my_type}");
+            tt.insert_expr(*id, my_type.clone());
+            Ok(my_type)
+        },
+        AnnotatedLambdaExpr::ListCon(id, car, cdr) => {
+            println!("{tabs}[i] It's a listcon...");
+            println!("{tabs}[i] Inferring car...");
+            let car_type = infer_d(tt, car, n+1)?;
+            println!("{tabs}[i] Inferring cdr...");
+            let cdr_type = infer_d(tt, cdr, n+1)?;
+            println!("{tabs}[i] Unifying...");
+            unify_d(tt, cdr_type.clone(), Type::List(Box::new(car_type.clone())), n+1)?;
+            let cdr_type = tt.specify(cdr_type);
+            println!("{tabs}[i] Inferred that the listcon should be {cdr_type}");
+            tt.insert_expr(*id, cdr_type.clone());
+            Ok(cdr_type)
+        },
+        AnnotatedLambdaExpr::LetIn(id, vec, expr) => {
+            println!("{tabs}[i] It's a let-in");
+            for (s, e) in vec.iter() {
+                println!("{tabs}[i] Inferring item of let-in...");
+                let t = infer_d(tt, e, n+1)?;
+                tt.insert_symbol(*s, t);
+            }
+            println!("{tabs}[i] Inferring body...");
+            let expr_t = infer_d(tt, expr, n+1)?;
+            println!("{tabs}[i] Got that the body should have type {expr_t}");
+            tt.insert_expr(*id, expr_t.clone());
+            Ok(expr_t)
+        },
+        AnnotatedLambdaExpr::CaseOf(id, s, exprs) => {
+            // resolve it to Type(s) -> Type(exprs.body)
+            println!("{tabs}[i] It's a case-of");
+            let temp: Result<Vec<(Type, Type)>, String> = exprs.iter().map(|(arg, expr)| {
+                println!("{tabs}[i] Checking one case...");
+                let body_t = infer_d(tt, expr, n+1); // Parse the expression's type first, to populate 
+                println!("{tabs}[i] ...and its corresponding argument");
+                let arg_t = infer_arg_d(tt, arg, n+1);
+                join(arg_t, body_t)
+            }).collect();
+            let mut iter = temp?.into_iter();
+            let mut first = iter.next().ok_or_else(|| format!("[infer] Expected Case expression to have at least 1 case"))?;
+            for (head, body) in iter {
+                let (h, b) = first;
+                println!("{tabs}[i] Unifying...");
+                first = (unify_d(tt, h, head, n+1)?, unify_d(tt, b, body, n+1)?);
+            }
+            println!("{tabs}[i] Unifying symbol s{s} with head...");
+            let head_type = match tt.get_symbol_safe(s) {
+                Some(head) => {
+                    unify_d(tt, head.clone(), first.0, n+1)?
+                },
+                None => first.0
+            };
+            tt.insert_symbol(*s, head_type.clone());
+            let body_type = first.1.clone();
+            println!("{tabs}[i] Got that the head should have type {}, and the body should have type {}", head_type, body_type);
+            tt.insert_expr(*id, first.1);
+            Ok(body_type)
+        },
+        AnnotatedLambdaExpr::TryThen(id, expr1, expr2) => {
+            match **expr2 {
+                AnnotatedLambdaExpr::FAIL => {
+                    let expr1_type = infer_d(tt, expr1, n+1)?;
+                    println!("{tabs}[i] Tail type is FAIL so the expression type must be {}", expr1_type);
+                    tt.insert_expr(*id, expr1_type.clone());
+                    Ok(expr1_type)
+                },
+                _ => {
+                    println!("{tabs}[i] first");
+                    let expr1_type = infer_d(tt, expr1, n+1)?;
+                    println!("{tabs}[i] second");
+                    let expr2_type = infer_d(tt, expr2, n+1)?;
+                    println!("{tabs}[i] Unifying..");
+                    let unified_type = unify_d(tt, expr1_type, expr2_type, n+1)?;
+                    println!("{tabs}[i] whole try expression has type {}", unified_type);
+                    tt.insert_expr(*id, unified_type.clone());
+                    Ok(unified_type)
+                }
+            }
+        },
+        AnnotatedLambdaExpr::FAIL => {
+            Err(format!("[infer] Type of FAIL should never be evaluated!"))
+        }
+    };
+    if let Ok(ref t) = res {
+        println!("{tabs}Inferred type {t} for {expr}");
+    }
+    res
+}
+
+fn infer_arg_d(tt: &mut TypeTable, arg: &Arg, n: usize) -> Result<Type, String> {
+    let tabs = "  ".repeat(n);
+    println!("{tabs}[ia] Inferring arg {arg}...");
+    match arg {
+        Arg::EmptyList => {
+            let (_, temp) = tt.grab_infer();
+            println!("{tabs}[ia] Empty list, say {}...", Type::List(Box::new(temp.clone())));
+            Ok(Type::List(Box::new(temp)))
+        },
+        Arg::ListCon(car, cdr) => {
+            println!("{tabs}[ia] Inferring car...");
+            let car_type = infer_arg_d(tt, car, n+1)?;
+            println!("{tabs}[ia] Inferring cdr...");
+            let cdr_type = infer_arg_d(tt, cdr, n+1)?;
+            println!("{tabs}[ia] Unifying...");
+            let res = unify_d(tt, cdr_type, Type::List(Box::new(car_type)), n+1);
+            if let Ok(ref t) = res {
+                println!("{tabs}[ia] Unified to {t}");
+            }
+            res
+        },
+        Arg::Atom(a) => match a {
+            Atom::BoolLit(_) => {
+                println!("{tabs}[ia] Found bool");
+                Ok(Type::Bool)
+            },
+            Atom::StringLit(_) => {
+                println!("{tabs}[ia] Found string");
+                Ok(Type::String)
+            },
+            Atom::IntLit(_) => {
+                println!("{tabs}[ia] Found int");
+                Ok(Type::Int)
+            },
+            Atom::Term(s) => match tt.get_symbol_safe(&s.0) {
+                Some(t) => {
+                    println!("{tabs}[ia] It's a symbol that points to {t}");
+                    Ok(t.clone())
+                },
+                None => {
+                    let t = tt.grab_infer().1;
+                    println!("{tabs}[ia] It's an unset arg, say {t}");
+                    Ok(t)
+                }
+            }
+        }
+    }
+}
+// ===================== END DEBUGGING CODE ======================
 
 fn get_op_type(tt: &mut TypeTable, op: OpTerm) -> Type {
     match op {
@@ -424,7 +762,7 @@ fn infer_arg(tt: &mut TypeTable, arg: &Arg) -> Result<Type, String> {
             Atom::BoolLit(_) => Ok(Type::Bool),
             Atom::StringLit(_) => Ok(Type::String),
             Atom::IntLit(_) => Ok(Type::Int),
-            Atom::Term(s) => match tt.get_symbol(&s.0) {
+            Atom::Term(s) => match tt.get_symbol_safe(&s.0) {
                 Some(t) => Ok(t.clone()),
                 None => Ok(tt.grab_infer().1)
             }
