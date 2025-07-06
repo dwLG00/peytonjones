@@ -42,7 +42,8 @@ fn translate_aux(statements: Vec<Statement>, ss: &mut SymbolStack, in_let: bool)
                 }
             },
             None => {
-                return Err(format!("[translate] No main definition found"));
+                // Don't throw an error - yet (helps with debugging)
+                //return Err(format!("[translate] No main definition found"));
             }
         }
     }
