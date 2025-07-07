@@ -133,7 +133,6 @@ fn parse_statement_or_type_annotation<'a, I>(it: &mut Peekable<I>, ss: &mut Symb
                 Ok(()) => {
                     let mut new_ss = SymbolStack::new();
                     let t = parse_type_greedy(it, &mut new_ss, tt, TypeContext::None)?;
-                    println!("[parse_statement] Found type annotation s{} :: {t}", symbol.0);
                     tt.insert_global_symbol(symbol.0, t);
                     skip_newlines(it)?;
                     return Ok(None);
@@ -232,13 +231,36 @@ fn parse_expr<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, context: ExprCo
     if parse_exact_term_weak(it, &"let".to_string()) { // let statement
         ss.push_stack();
         skip_newlines(it)?;
+        let mut statements = Vec::<Statement>::new();
         let statement = parse_statement(it, ss, true)?;
+        statements.push(statement);
         skip_newlines(it)?;
-        parse_exact_term(it, &"in".to_string());
+        loop {
+            match it.next() {
+                Some((idx, t)) => {
+                    match t {
+                        Token::Comma => {
+                            skip_newlines(it)?;
+                            statements.push(
+                                parse_statement(it, ss, true)?
+                            );
+                            skip_newlines(it)?;
+                            // let it loop
+                        },
+                        Token::Term(s) => if s == "in" {
+                            break;
+                        },
+                        _ => { return Err(format!("[parse_expr] @{idx}, Expected `,` or `in`, found {:?} instead", t)); }
+                    }
+                }
+                None => { return Err(format!("[parse_expr] @End, Expected `,` or `in`, found EOF")); }
+            }
+        }
+        //parse_exact_term(it, &"in".to_string());
         skip_newlines(it)?;
         let expr = parse_expr_greedy(it, ss, context)?;
         ss.pop_stack();
-        return Ok(Expr::LetIn(vec![statement], Box::new(expr)))
+        return Ok(Expr::LetIn(statements, Box::new(expr)))
 
     } else if parse_exact_term_weak(it, &"if".to_string()) { // if statement
         skip_newlines(it)?;
@@ -346,7 +368,7 @@ fn parse_expr_greedy_aux<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, cont
             },
             Token::Comma => {
                 match context {
-                    ExprContext::InList => Ok(prev_expr),
+                    ExprContext::InList | ExprContext::InLet => Ok(prev_expr),
                     _ => Err(format!("[parse_expr_greedy_aux] @{}, unexpected `,` outside of list", idx))
                 }
             },
