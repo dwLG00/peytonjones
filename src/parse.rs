@@ -3,6 +3,7 @@ use std::iter::Peekable;
 use crate::expr::{Statement, Expr, Atom, Arg, Binop};
 use crate::symbols::{Symbol, SymbolStack};
 use crate::tokens::{Token};
+use crate::typing::{Type, TypeTable};
 
 /*
 Grammar:
@@ -47,6 +48,13 @@ enum ExprContext {
     None
 }
 
+#[derive(PartialEq, Clone, Debug)]
+enum TypeContext {
+    InParen,
+    InBracket,
+    None
+}
+
 const RESERVED_TERMS: [&'static str; 6] = [
     "if",
     "then",
@@ -56,12 +64,25 @@ const RESERVED_TERMS: [&'static str; 6] = [
     "main"
 ];
 
-pub fn parse(tokens : Vec<Token>) -> Result<(Vec<Statement>, SymbolStack), String> {
+pub fn parse(tokens : Vec<Token>) -> Result<(Vec<Statement>, SymbolStack, TypeTable), String> {
     let mut statements : Vec<Statement> = Vec::new();
     let mut symbol_stack = SymbolStack::new();
     let mut it = tokens.iter().enumerate().peekable();
+    let mut tt = TypeTable::new();
 
     while it.peek().is_some() {
+        let maybe_statement_result = parse_statement_or_type_annotation(&mut it, &mut symbol_stack, &mut tt);
+        match maybe_statement_result {
+            Ok(maybe_statement) => match maybe_statement {
+                Some(statement) => {
+                    statements.push(statement);
+                    skip_newlines_to_end(&mut it); // Skip newlines until we hit another token or EOF
+                },
+                None => {} // Do nothing, the parse function already handled adding type annotations
+            },
+            Err(e) => { return Err(e); }
+        }
+        /*
         let next_statement = parse_statement(&mut it, &mut symbol_stack, false);
         match next_statement {
             Ok(statement) => {
@@ -70,8 +91,77 @@ pub fn parse(tokens : Vec<Token>) -> Result<(Vec<Statement>, SymbolStack), Strin
             },
             Err(e) => { return Err(e); }
         }
+        */
     }
-    Ok((statements, symbol_stack))
+    Ok((statements, symbol_stack, tt))
+}
+
+fn parse_statement_or_type_annotation<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, tt: &mut TypeTable) -> Result<Option<Statement>, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    // Peek to clear the "main" case (no arguments)
+    match it.peek() {
+        None => { return Err(format!("[parse_statemet_or_type_annotation] @End, Hit EOF")); },
+        Some((idx, token)) => match token {
+            Token::Term(t) => if t == "main" {
+                it.next();
+                let idx = grab_index(it);
+                match parse_eq_weak(it) {
+                    Err(maybe_tok) => match maybe_tok {
+                        None => { return Err(format!("[parse_statemet_or_type_annotation] @End, Hit EOF")); },
+                        Some(tok) => { return Err(format!("[parse_statement_or_type_annotation] @{}, Expected `=`, found `{:?}`", idx, tok)); }
+                    },
+                    Ok(()) => {
+                        let expect_expr = parse_expr_greedy(it, ss, ExprContext::None);
+                        match expect_expr {
+                            Ok(expr) => { return Ok(Some(Statement::MainDef(expr))); },
+                            Err(e) => { return Err(e); }
+                        }
+                    }
+                }
+            },
+            token => { return Err(format!("[parse_statement] @{}, Expected term, found `{:?}`", idx, token))}
+        }
+    }
+    let expect_symbol = parse_symbol(it, ss);
+    ss.push_stack();
+    match expect_symbol {
+        Err(e) => Err(e),
+        Ok(symbol) => {
+            // match 0 or more Atoms
+            match parse_dcolon_weak(it) {
+                Ok(()) => {
+                    let mut new_ss = SymbolStack::new();
+                    let t = parse_type_greedy(it, &mut new_ss, tt, TypeContext::None)?;
+                    println!("[parse_statement] Found type annotation s{} :: {t}", symbol.0);
+                    tt.insert_global_symbol(symbol.0, t);
+                    skip_newlines(it)?;
+                    return Ok(None);
+                },
+                Err(_) => {}
+            }
+            let args = parse_args(it, ss)?;
+            let idx = grab_index(it); // For debugging
+            // match eq
+            match parse_eq_weak(it) {
+                Ok(()) => { skip_newlines(it)?; }, // skips for you
+                Err(maybe_token) => match maybe_token {
+                    Some(token) => { return Err(format!("[parse_statement] @{}, Expected `=` after statement beginning, found {:?}", idx, token)); },
+                    None => { return Err(format!("[parse_statement] @End, Expected `=` after statement beginning, found EOF")); }
+                }
+            }
+            let expect_expr = parse_expr_greedy(
+                it,
+                ss,
+                ExprContext::None // Always called from the top level
+            );
+            ss.pop_stack();
+            match expect_expr {
+                Ok(expr) => Ok(Some(Statement::FuncDef(symbol, args, expr))),
+                Err(e) => Err(e)
+            }
+        }
+    }
 }
 
 fn parse_statement<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, in_let: bool) -> Result<Statement, String> 
@@ -445,6 +535,99 @@ fn parse_eq_weak<'a, I>(it: &mut Peekable<I>) -> Result<(), Option<Token>>
                 Ok(())
             },
             t => Err(Some((**t).clone()))
+        }
+    }
+}
+
+fn parse_dcolon_weak<'a, I>(it: &mut Peekable<I>) -> Result<(), Option<Token>>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    match it.peek() {
+        None => Err(None),
+        Some((_, token)) => match token {
+            Token::DColon => {
+                it.next();
+                Ok(())
+            },
+            t => Err(Some((**t).clone()))
+        }
+    }
+}
+
+fn parse_type_greedy<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, tt: &mut TypeTable, context: TypeContext) -> Result<Type, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    let t1 = parse_type(it, ss, tt)?;
+    match it.peek() {
+        None => { return Ok(t1); },
+        Some((idx, t)) => match t {
+            Token::RParen => if let TypeContext::InParen = context {
+                Ok(t1)
+            } else {
+                Err(format!("[parse_type_greedy] @{idx}, Unexpected `)`"))
+            },
+            Token::RBracket => if let TypeContext::InBracket = context {
+                Ok(t1)
+            } else {
+                Err(format!("[parse_type_greedy] @{idx}, Unexpected `]`"))
+            },
+            Token::Newline => Ok(t1),
+            Token::RArrow => {
+                it.next();
+                let t2 = parse_type_greedy(it, ss, tt, context)?;
+                Ok(Type::Func(Box::new(t1), Box::new(t2)))
+            },
+            _ => Err(format!("[parse_type_greedy] @{idx}, Expected type expression, found {:?} instead", t))
+        }
+    }
+}
+
+fn parse_type<'a, I>(it: &mut Peekable<I>, ss: &mut SymbolStack, tt: &mut TypeTable) -> Result<Type, String>
+    where I: Iterator<Item=(usize, &'a Token)>
+{
+    match it.next() {
+        None => { return Err(format!("[parse_type] @End, Expected type expression, found EOF instead")); },
+        Some((idx, tok)) => match tok {
+            Token::Term(s) => {
+                if s == "str" {
+                    Ok(Type::String)
+                } else if s == "int" {
+                    Ok(Type::Int)
+                } else if s == "bool" {
+                    Ok(Type::Bool)
+                } else {
+                    let sid = ss.get_symbol(s);
+                    match tt.get_symbol(&sid.0) {
+                        Some(t) => Ok(t.clone()),
+                        None => {
+                            let (_, t) = tt.grab_infer();
+                            tt.insert_symbol(sid.0, t.clone());
+                            Ok(t)
+                        }
+                    }
+                }
+            },
+            Token::LBracket => {
+                let t = parse_type_greedy(it, ss, tt, TypeContext::InBracket)?;
+                match it.next() {
+                    None => Err(format!("[parse_type] @End, Expected `]`, found EOF instead")),
+                    Some((idx, tok)) => match tok {
+                        Token::RBracket => Ok(Type::List(Box::new(t))),
+                        _ => Err(format!("[parse_type] @{idx}, Expected `]`, found {:?} instead", tok))
+                    }
+                }
+            },
+            Token::LParen => {
+                let t = parse_type_greedy(it, ss, tt, TypeContext::InParen)?;
+                match it.next() {
+                    None => Err(format!("[parse_type] @End, Expected `)`, found EOF instead")),
+                    Some((idx, tok)) => match tok {
+                        Token::RParen => Ok(t),
+                        _ => Err(format!("[parse_type] @{idx}, Expected `)`, found {:?} instead", tok))
+                    }
+                }
+            },
+            _ => Err(format!("[parse_type] @{idx}, expected type expression, found {:?} instead", tok))
         }
     }
 }

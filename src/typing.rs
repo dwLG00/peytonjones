@@ -133,21 +133,16 @@ impl TypeTable {
         Some(self.specify(t.clone()))
     }
 
-    fn get_symbol(&self, s: &SymbolID) -> Option<&Type> {
+    pub fn get_symbol(&self, s: &SymbolID) -> Option<&Type> {
         self.symbol_table.get(s)
     }
 
     fn get_symbol_safe(&mut self, s: &SymbolID) -> Option<Type> {
-        let res = self.get_symbol(s).cloned();
+        // Global type takes precedence over local type
+        let res = self.global_symbol_table.get(s).cloned();
         match res {
-            None => {
-                let res2 = self.global_symbol_table.get(s).cloned();
-                match res2 {
-                    Some(t) => Some(self.clone_with_new_vars(&t)),
-                    None => None
-                }
-            },
-            t => t
+            None => self.get_symbol(s).cloned(),
+            Some(t) => Some(self.clone_with_new_vars(&t))
         }
     }
 
@@ -301,6 +296,16 @@ fn unify(tt: &mut TypeTable, t1: Type, t2: Type) -> Result<Type, String> {
     }
 }
 
+pub fn infer_assignment(tt: &mut TypeTable, expr: &LambdaExprWithID, s: SymbolID) -> Result<Type, String> {
+    let t = infer(tt, expr)?;
+    match tt.get_symbol_safe(&s) {
+        Some(t2) => {
+            unify(tt, t, t2)
+        },
+        None => Ok(t)
+    }
+}
+
 pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String> {
     match expr {
         AnnotatedLambdaExpr::StringTerm(id, _) => {
@@ -379,6 +384,7 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
             let temp: Result<Vec<(Type, Type)>, String> = exprs.iter().map(|(arg, expr)| {
                 let body_t = infer(tt, expr); // Parse the expression's type first, to populate 
                 let arg_t = infer_arg(tt, arg);
+                let body_t = body_t.map(|t| tt.specify(t));
                 join(arg_t, body_t)
             }).collect();
             let mut iter = temp?.into_iter();
@@ -421,6 +427,15 @@ pub fn infer(tt: &mut TypeTable, expr: &LambdaExprWithID) -> Result<Type, String
 }
 
 // ===================== DEBUGGING CODE ======================
+pub fn infer_assignment_d(tt: &mut TypeTable, expr: &LambdaExprWithID, s: SymbolID) -> Result<Type, String> {
+    let t = infer_d(tt, expr, 0)?;
+    match tt.get_symbol_safe(&s) {
+        Some(t2) => {
+            unify_d(tt, t, t2, 0)
+        },
+        None => Ok(t)
+    }
+}
 
 fn unify_d(tt: &mut TypeTable, t1: Type, t2: Type, n: usize) -> Result<Type, String> {
     let tabs = "  ".repeat(n);
@@ -602,6 +617,7 @@ pub fn infer_d(tt: &mut TypeTable, expr: &LambdaExprWithID, n: usize) -> Result<
                 let body_t = infer_d(tt, expr, n+1); // Parse the expression's type first, to populate 
                 println!("{tabs}[i] ...and its corresponding argument");
                 let arg_t = infer_arg_d(tt, arg, n+1);
+                let body_t = body_t.map(|t| tt.specify(t));
                 join(arg_t, body_t)
             }).collect();
             let mut iter = temp?.into_iter();

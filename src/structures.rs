@@ -14,6 +14,7 @@ use crate::symbols;
 use crate::translate;
 use crate::lambda;
 use crate::typing;
+use crate::typing::TypeTable;
 
 // "Structures" of context surrounding file at each stage of compilation
 
@@ -25,13 +26,15 @@ pub struct Lexed {
 #[derive(Debug, Clone)]
 pub struct Parsed {
     statements: Vec<expr::Statement>,
-    symbol_stack: symbols::SymbolStack
+    symbol_stack: symbols::SymbolStack,
+    type_table: typing::TypeTable
 }
 
 #[derive(Debug, Clone)]
 pub struct Translated {
     function_defs: Vec<(u32, lambda::LambdaExpr)>,
-    symbol_stack: symbols::SymbolStack
+    symbol_stack: symbols::SymbolStack,
+    type_table: typing::TypeTable
 }
 
 #[derive(Debug, Clone)]
@@ -51,8 +54,8 @@ impl Lexed {
     }
 
     pub fn parse(self) -> Result<Parsed, String> {
-        let (statements, ss) = parse::parse(self.tokens)?;
-        Ok(Parsed { statements: statements, symbol_stack: ss })
+        let (statements, ss, tt) = parse::parse(self.tokens)?;
+        Ok(Parsed { statements: statements, symbol_stack: ss, type_table: tt})
     }
 }
 
@@ -67,17 +70,19 @@ impl Parsed {
     pub fn translate(self) -> Result<Translated, String> {
         let mut ss = self.symbol_stack;
         let function_defs = translate::translate(self.statements, &mut ss)?;
-        Ok(Translated { function_defs: function_defs, symbol_stack: ss })
+        Ok(Translated { function_defs: function_defs, symbol_stack: ss, type_table: self.type_table })
     }
 }
 
 impl Translated {
     pub fn type_check(self) -> Result<TypeChecked, String> {
-        let mut type_table = typing::TypeTable::new();
+        let mut type_table = self.type_table;
         let mut typechecked_function_defs = BTreeMap::new();
         for (symbol, lambda) in self.function_defs.into_iter() {
             let identified = typing::identify(lambda, &mut type_table);
-            let t = typing::infer(&mut type_table, &identified)?;
+            //typing::infer(&mut type_table, &identified)?;
+            typing::infer_assignment(&mut type_table, &identified, symbol)?;
+            //typing::infer_assignment_d(&mut type_table, &identified, symbol)?;
             //typing::infer_d(&mut type_table, &identified, 0)?;
             // Handle recursive case
             //let t = typing::infer_d(&mut type_table, &identified, 0)?;
