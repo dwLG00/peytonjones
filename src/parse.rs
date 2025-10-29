@@ -124,13 +124,12 @@ fn parse_statement_or_type_annotation<'a, I>(it: &mut Peekable<I>, ss: &mut Symb
         }
     }
     let expect_symbol = parse_symbol(it, ss);
-    ss.push_stack();
     match expect_symbol {
         Err(e) => Err(e),
         Ok(symbol) => {
             // match 0 or more Atoms
             match parse_dcolon_weak(it) {
-                Ok(()) => {
+                Ok(()) => { // We have a type annotation
                     let mut new_ss = SymbolStack::new();
                     let t = parse_type_greedy(it, &mut new_ss, tt, TypeContext::None)?;
                     tt.insert_global_symbol(symbol.0, t);
@@ -139,6 +138,7 @@ fn parse_statement_or_type_annotation<'a, I>(it: &mut Peekable<I>, ss: &mut Symb
                 },
                 Err(_) => {}
             }
+            ss.push_stack(); // Push stack if we have a statement
             let args = parse_args(it, ss)?;
             let idx = grab_index(it); // For debugging
             // match eq
