@@ -9,18 +9,18 @@ use crate::expr::*;
 
 use std::collections::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Supercombinator {
-    variables: Vec<SymbolID>,
-    body: SupercombinatorExpr<SymbolID, ExprID>
+    pub variables: Vec<SymbolID>,
+    pub body: SupercombinatorExpr<SymbolID, ExprID>
 }
 
-pub fn supercombinate(lambda_exprs: &BTreeMap<u32, AnnotatedLambdaExpr<u32, u32>>, symbol_stack: &mut SymbolStack, type_table: &mut TypeTable) -> Vec<Supercombinator> {
+pub fn supercombinate(lambda_exprs: &BTreeMap<u32, AnnotatedLambdaExpr<u32, u32>>, symbol_stack: &mut SymbolStack, type_table: &mut TypeTable) -> (Vec<Supercombinator>, usize) {
     let mut supercombinator_store = Vec::new();
     let sstack = &mut symbol_stack.to_sstack();
     let mut function_definitions = Vec::new();
     // build up supercombinators, and write each function as a supercombinator
-    for (symbol, expr) in lambda_exprs {
+    for (symbol, expr) in lambda_exprs.iter() {
         let top_level_sc_body = reduce_lambda(expr, &mut supercombinator_store, sstack, type_table);
         function_definitions.push((*symbol, top_level_sc_body));
     }
@@ -28,19 +28,14 @@ pub fn supercombinate(lambda_exprs: &BTreeMap<u32, AnnotatedLambdaExpr<u32, u32>
     register_nullary_functions(&mut supercombinator_store, &mut function_definitions, type_table);
     rewrite_functions(&mut supercombinator_store, &mut function_definitions, type_table);
     
+    // function defs are sorted by key, and the symbol for main is u32::MAX
+    let entry_idx = function_definitions.len() - 1;
+    let entry_sc_id = match function_definitions[entry_idx].1 {
+        SupercombinatorExpr::Supercombinator(_, id) => id,
+        _ => {panic!("[supercombinate] Expected main expression to be bound to a supercombinator, but instead got {:?}", function_definitions[entry_idx])}
+    };
 
-    /*
-    println!("Supercombinators:");
-    for (i, supercombinator) in supercombinator_store.iter().enumerate() {
-        println!("Y{}: {:?}", i, supercombinator);
-    }
-    println!();
-    println!("Function definitions:");
-    for (symbol, sc_body) in function_definitions.iter() {
-        println!("s{}: {:?}", symbol, sc_body);
-    }
-    */
-    return supercombinator_store
+    return (supercombinator_store, entry_sc_id as usize)
 }
 
 pub fn supercombinate_debug(lambda_exprs: &BTreeMap<u32, AnnotatedLambdaExpr<u32, u32>>, symbol_stack: &mut SymbolStack, type_table: &mut TypeTable) {

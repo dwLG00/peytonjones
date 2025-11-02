@@ -24,9 +24,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     //println!("{}", lexed);
     let parsed = lexed.parse()?;
     let translated = parsed.translate()?;
-    let mut type_checked = translated.type_check()?;
+    let type_checked = translated.type_check()?;
     println!("{}", type_checked);
-    type_checked.supercombinate_debug();
+    let supercombinated = type_checked.supercombinate()?;
+    println!("{}", supercombinated);
     //println!("{:?}", type_checked);
     Ok(())
 }

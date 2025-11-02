@@ -87,6 +87,45 @@ impl<S: Copy + AlphaSubbable, N: Copy> AlphaSubbable for SupercombinatorExpr<S, 
     }
 }
 
+impl<N> fmt::Display for SupercombinatorExpr<SymbolID, N> where N: Copy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Supercombinator(_, s) => write!(f, "$Y{s}"),
+            Self::StringTerm(_, s) => write!(f, "\"{s}\""),
+            Self::IntTerm(_, n) => write!(f, "{n}"),
+            Self::BoolTerm(_, b) => if *b {
+                write!(f, "true")
+            } else {
+                write!(f, "false")
+            },
+            Self::VarTerm(_, s) => write!(f, "s{s}"),
+            Self::OpTerm(_, op) => write!(f, "{op}"),
+            Self::EmptyList(_) => write!(f, "[]"),
+            Self::ListCon(_, car, cdr) => write!(f, "{car} : {cdr}"),
+            Self::TermApplications(_, func, app) => {
+                match **app {
+                    //LambdaExpr::SimpleTerm(_) => write!(f, "{func} {app}"),
+                    Self::StringTerm(_, _) | Self::BoolTerm(_, _) 
+                        | Self::IntTerm(_, _) | Self::VarTerm(_, _) => write!(f, "{func} {app}"),
+                    _ => write!(f, "{func} ({app})")
+                }
+            },
+            Self::LetIn(_, vec, expr) => {
+                let vec_s = vec.iter().map(|(s, e)| format!("s{s} := {e},")).collect::<String>();
+                let vec_s = vec_s.trim_end_matches(",");
+                write!(f, "(let {vec_s} in {expr})")
+            },
+            Self::CaseOf(_, s, hm) => {
+                let vec_s = hm.iter().map(|(key, val)| format!("({key} => {val}),")).collect::<String>();
+                let vec_s = vec_s.trim_end_matches(",");
+                write!(f, "(case s{s}: {vec_s})")
+            },
+            Self::TryThen(_, first, second) => write!(f, "{first} █ {second}"),
+            Self::FAIL => write!(f, "FAIL")
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AnnotatedLambdaExpr<S, N> where S: Copy, N: Copy {
     StringTerm(N, String),

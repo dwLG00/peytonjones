@@ -49,7 +49,9 @@ pub struct TypeChecked {
 #[derive(Debug, Clone)]
 pub struct SuperCombinated {
     symbol_stack: symbols::SymbolStack,
-    type_table: typing::TypeTable
+    type_table: typing::TypeTable,
+    supercombinators: Vec<supercombinator::Supercombinator>,
+    entry_point: usize
 }
 
 impl Lexed {
@@ -127,5 +129,30 @@ impl fmt::Display for TypeChecked {
 impl TypeChecked {
     pub fn supercombinate_debug(&mut self) {
         supercombinator::supercombinate_debug(&self.function_defs, &mut self.symbol_stack, &mut self.type_table);
+    }
+
+    pub fn supercombinate(mut self) -> Result<SuperCombinated, String> {
+        let (supercombinators, entry_point) = supercombinator::supercombinate(&self.function_defs, &mut self.symbol_stack, &mut self.type_table);
+        return Ok(SuperCombinated {
+            supercombinators: supercombinators,
+            entry_point: entry_point,
+            symbol_stack: self.symbol_stack,
+            type_table: self.type_table
+        })
+    }
+}
+
+impl fmt::Display for SuperCombinated {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buf = String::new();
+        for (i, supercombinator) in self.supercombinators.iter().enumerate() {
+            buf.write_fmt(format_args!("$Y{} [", i))?;
+            for arg in supercombinator.variables.iter() {
+                buf.write_fmt(format_args!("s{}, ", arg))?;
+            }
+            buf.write_fmt(format_args!("] = {}\n", supercombinator.body))?;
+        }
+        buf.write_fmt(format_args!("\nEntry point: $Y{}", self.entry_point))?;
+        write!(f, "{}", buf)
     }
 }

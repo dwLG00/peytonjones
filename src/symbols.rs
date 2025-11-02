@@ -70,7 +70,7 @@ pub struct SymbolStack {
 
 impl SymbolStack {
     pub fn new() -> SymbolStack {
-        SymbolStack { stack:  vec![SymbolTable::new()], next_u32: 1 } // reserve 0 for main function
+        SymbolStack { stack:  vec![SymbolTable::new()], next_u32: 1 } // main := u32::MAX fyi. 
     }
 
     pub fn set_next_u32(&mut self, next: u32) {
