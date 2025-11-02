@@ -4,12 +4,14 @@ use std::cmp::Ordering;
 
 pub type SymbolID = u32;
 pub type SymbolTable = std::collections::HashMap<String, SymbolID>;
+pub type SymbolSet = std::collections::HashSet<SymbolID>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Symbol(pub SymbolID, pub bool); // ident, scope
 
 pub trait AlphaSubbable {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self;
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self;
 }
 
 impl AlphaSubbable for SymbolID {
@@ -19,6 +21,14 @@ impl AlphaSubbable for SymbolID {
         } else {
             *self
         }
+    }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        for (old, new) in map.iter() {
+            if self == old {
+                return *new;
+            }
+        }
+        return *self;
     }
 }
 
@@ -42,6 +52,14 @@ impl AlphaSubbable for Symbol {
             self.clone()
         }
     }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        for (old, new) in map.iter() {
+            if self.0 == *old {
+                return Symbol(*new, self.1)
+            }
+        }
+        return self.clone();
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +71,10 @@ pub struct SymbolStack {
 impl SymbolStack {
     pub fn new() -> SymbolStack {
         SymbolStack { stack:  vec![SymbolTable::new()], next_u32: 1 } // reserve 0 for main function
+    }
+
+    pub fn set_next_u32(&mut self, next: u32) {
+        self.next_u32 = next
     }
 
     pub fn contains(&self, s: &String) -> bool {
@@ -103,5 +125,53 @@ impl SymbolStack {
             return None;
         }
         self.stack.pop()
+    }
+
+    pub fn to_sstack(&self) -> SStack {
+        let mut stack = Vec::new();
+        for table in self.stack.iter() {
+            stack.push(table.values().copied().collect());
+        }
+        let next_u32 = self.next_u32;
+        SStack { stack, next_u32 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SStack {
+    stack: Vec<SymbolSet>,
+    next_u32 : u32
+}
+
+impl SStack {
+    pub fn new() -> SStack {
+        SStack { stack: vec![SymbolSet::new()], next_u32: 1 }
+    }
+
+    pub fn contains(&self, id: SymbolID) -> bool {
+        for set in self.stack.iter() {
+            if set.contains(&id) { return true }
+        }
+        return false
+    }
+
+    pub fn push_stack(&mut self) {
+        self.stack.push(SymbolSet::new());
+    }
+
+    pub fn pop_stack(&mut self) -> Option<SymbolSet> {
+        self.stack.pop()
+    }
+
+    pub fn add_symbol(&mut self, symbol: SymbolID) {
+        let last_idx = self.stack.len() - 1;
+        self.stack[last_idx].insert(symbol);
+    }
+
+    pub fn grab(&mut self) -> SymbolID {
+        // Just grabs the next symbol ID available, for use outside of parsing
+        let next = self.next_u32;
+        self.next_u32 += 1;
+        next
     }
 }

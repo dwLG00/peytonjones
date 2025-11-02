@@ -14,6 +14,7 @@ use crate::symbols;
 use crate::translate;
 use crate::lambda;
 use crate::typing;
+use crate::supercombinator;
 use crate::typing::TypeTable;
 
 // "Structures" of context surrounding file at each stage of compilation
@@ -41,6 +42,12 @@ pub struct Translated {
 pub struct TypeChecked {
     //function_defs: Vec<(u32, lambda::AnnotatedLambdaExpr<symbols::SymbolID, typing::ExprID>)>,
     function_defs: BTreeMap<u32, lambda::AnnotatedLambdaExpr<symbols::SymbolID, typing::ExprID>>,
+    symbol_stack: symbols::SymbolStack,
+    type_table: typing::TypeTable
+}
+
+#[derive(Debug, Clone)]
+pub struct SuperCombinated {
     symbol_stack: symbols::SymbolStack,
     type_table: typing::TypeTable
 }
@@ -114,5 +121,11 @@ impl fmt::Display for TypeChecked {
             buf.write_fmt(format_args!("s{} => {}\n\n", symbol, lambda))?;
         }
         write!(f, "{}", buf)
+    }
+}
+
+impl TypeChecked {
+    pub fn supercombinate_debug(&mut self) {
+        supercombinator::supercombinate_debug(&self.function_defs, &mut self.symbol_stack, &mut self.type_table);
     }
 }

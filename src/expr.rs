@@ -1,5 +1,6 @@
 use crate::lambda::{LambdaExpr};
 use crate::symbols::{Symbol, SymbolID, SymbolTable, AlphaSubbable};
+use std::collections::HashSet;
 use std::fmt;
 use std::cmp::Ordering;
 
@@ -19,7 +20,8 @@ impl Statement {
             (Self::FuncDef(s1, _, _), Self::FuncDef(s2, _, _)) => s1.cmp(s2)
         }
     }
-
+}
+impl AlphaSubbable for Statement {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
         match self {
             Statement::FuncDef(s, args, e) => {
@@ -29,6 +31,17 @@ impl Statement {
                 Statement::FuncDef(new_s, new_args, new_e)
             },
             Statement::MainDef(e) => Statement::MainDef(e.alpha_subst(old, new))
+        }
+    }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        match self {
+            Statement::FuncDef(s, args, e) => {
+                let new_s = s.alpha_multisubst(map);
+                let new_args = args.iter().map(|a| a.alpha_multisubst(map)).collect();
+                let new_e = e.alpha_multisubst(map);
+                Statement::FuncDef(new_s, new_args, new_e)
+            },
+            Statement::MainDef(e) => Statement::MainDef(e.alpha_multisubst(map))
         }
     }
 }
@@ -89,6 +102,35 @@ impl AlphaSubbable for Expr {
             Self::LetIn(statements, expr) => Self::LetIn(statements.iter().map(|s| s.alpha_subst(old, new)).collect(), Box::new(expr.alpha_subst(old, new)))
         }
     }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        match self {
+            Self::App(expr1, expr2) => 
+                Self::App(
+                    Box::new(expr1.alpha_multisubst(map)),
+                    Box::new(expr2.alpha_multisubst(map))
+                ),
+            Self::Binop(binop, expr1, expr2) => 
+                Self::Binop(
+                    *binop, 
+                    Box::new(expr1.alpha_multisubst(map)),
+                    Box::new(expr2.alpha_multisubst(map))
+                ),
+            Self::Atom(atom) => Self::Atom(atom.alpha_multisubst(map)),
+            Self::IfElse(cond, if_clause, else_clause) => 
+                Self::IfElse(
+                    Box::new(cond.alpha_multisubst(map)),
+                    Box::new(if_clause.alpha_multisubst(map)),
+                    Box::new(else_clause.alpha_multisubst(map))
+                ),
+            Self::List(expr_vec) => Self::List(expr_vec.iter().map(|e| e.alpha_multisubst(map)).collect()),
+            Self::ListCon(expr1, expr2) =>
+                Self::ListCon(
+                    Box::new(expr1.alpha_multisubst(map)),
+                    Box::new(expr2.alpha_multisubst(map))
+                ),
+            Self::LetIn(statements, expr) => Self::LetIn(statements.iter().map(|s| s.alpha_multisubst(map)).collect(), Box::new(expr.alpha_multisubst(map)))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -114,6 +156,12 @@ impl AlphaSubbable for Atom {
     fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
         match self {
             Atom::Term(s) => Atom::Term(s.alpha_subst(old, new)),
+            _ => self.clone()
+        }
+    }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        match self {
+            Atom::Term(s) => Atom::Term(s.alpha_multisubst(map)),
             _ => self.clone()
         }
     }
@@ -171,6 +219,13 @@ impl AlphaSubbable for Arg {
         match self {
             Arg::Atom(a) => Arg::Atom(a.alpha_subst(old, new)),
             Arg::ListCon(arg1, arg2) => Arg::ListCon(Box::new(arg1.alpha_subst(old, new)), Box::new(arg2.alpha_subst(old, new))),
+            Arg::EmptyList => Arg::EmptyList
+        }
+    }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        match self {
+            Arg::Atom(a) => Arg::Atom(a.alpha_multisubst(map)),
+            Arg::ListCon(arg1, arg2) => Arg::ListCon(Box::new(arg1.alpha_multisubst(map)), Box::new(arg2.alpha_multisubst(map))),
             Arg::EmptyList => Arg::EmptyList
         }
     }

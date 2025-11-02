@@ -8,6 +8,7 @@ mod translate;
 mod aux;
 mod typing;
 mod structures;
+mod supercombinator;
 use crate::structures::*;
 
 use std::fs::File;
@@ -23,8 +24,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     //println!("{}", lexed);
     let parsed = lexed.parse()?;
     let translated = parsed.translate()?;
-    let type_checked = translated.type_check()?;
+    let mut type_checked = translated.type_check()?;
     println!("{}", type_checked);
+    type_checked.supercombinate_debug();
     //println!("{:?}", type_checked);
     Ok(())
 }

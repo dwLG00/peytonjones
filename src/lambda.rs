@@ -8,6 +8,86 @@ use crate::symbols::{Symbol, SymbolID, AlphaSubbable};
 use crate::aux::Recursible;
 
 #[derive(Debug, Clone)]
+pub enum SupercombinatorExpr<S, N> where S: Copy, N: Copy {
+    StringTerm(N, String),
+    IntTerm(N, u32),
+    BoolTerm(N, bool),
+    VarTerm(N, S),
+    OpTerm(N, OpTerm),
+    Supercombinator(N, u32),
+    EmptyList(N),
+    ListCon(N, Box<SupercombinatorExpr<S, N>>, Box<SupercombinatorExpr<S, N>>),
+    TermApplications(N, Box<SupercombinatorExpr<S, N>>, Box<SupercombinatorExpr<S, N>>),
+    LetIn(N, Vec<(S, SupercombinatorExpr<S, N>)>, Box<SupercombinatorExpr<S, N>>),
+    CaseOf(N, S, HashMap<Arg, SupercombinatorExpr<S, N>>),
+    TryThen(N, Box<SupercombinatorExpr<S, N>>, Box<SupercombinatorExpr<S, N>>),
+    FAIL
+}
+
+impl<S: Copy, N: Copy> SupercombinatorExpr<S, N> {
+    pub fn get_type(&self) -> &N {
+        match self {
+            Self::StringTerm(n, _) => n,
+            Self::IntTerm(n, _) => n,
+            Self::BoolTerm(n, _) => n,
+            Self::VarTerm(n, _) => n,
+            Self::OpTerm(n, _) => n,
+            Self::Supercombinator(n, _) => n,
+            Self::EmptyList(n) => n,
+            Self::ListCon(n, _, _) => n,
+            Self::TermApplications(n, _, _) => n,
+            Self::LetIn(n, _, _) => n,
+            Self::CaseOf(n, _, _) => n,
+            Self::TryThen(n, _, _) => n,
+            Self::FAIL => {
+                panic!("Type of FAIL should never be checked")
+            }
+        }
+    }
+}
+
+impl<S: Copy + AlphaSubbable, N: Copy> AlphaSubbable for SupercombinatorExpr<S, N> {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Self::VarTerm(n, s) => Self::VarTerm(*n, s.alpha_subst(old, new)),
+            Self::ListCon(n, car, cdr) => Self::ListCon(*n, Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
+            Self::TermApplications(n, func, arg) => Self::TermApplications(*n, Box::new(func.alpha_subst(old, new)), Box::new(arg.alpha_subst(old, new))),
+            Self::LetIn(n, v, expr) => Self::LetIn(
+                *n, 
+                v.iter().map(|(s, e)| (s.alpha_subst(old, new), e.alpha_subst(old, new))).collect(),
+                Box::new(expr.alpha_subst(old, new))
+            ),
+            Self::CaseOf(n, s, hm) => Self::CaseOf(
+                *n,
+                s.alpha_subst(old, new),
+                supercombinator_alpha_subst(hm, old, new)
+            ),
+            Self::TryThen(n, first, second) => Self::TryThen(*n, Box::new(first.alpha_subst(old, new)), Box::new(second.alpha_subst(old, new))),
+            _ => self.clone()
+        }
+    }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        match self {
+            Self::VarTerm(n, s) => Self::VarTerm(*n, s.alpha_multisubst(map)),
+            Self::ListCon(n, car, cdr) => Self::ListCon(*n, Box::new(car.alpha_multisubst(map)), Box::new(cdr.alpha_multisubst(map))),
+            Self::TermApplications(n, func, arg) => Self::TermApplications(*n, Box::new(func.alpha_multisubst(map)), Box::new(arg.alpha_multisubst(map))),
+            Self::LetIn(n, v, expr) => Self::LetIn(
+                *n, 
+                v.iter().map(|(s, e)| (s.alpha_multisubst(map), e.alpha_multisubst(map))).collect(),
+                Box::new(expr.alpha_multisubst(map))
+            ),
+            Self::CaseOf(n, s, hm) => Self::CaseOf(
+                *n,
+                s.alpha_multisubst(map),
+                supercombinator_alpha_multisubst(hm, map)
+            ),
+            Self::TryThen(n, first, second) => Self::TryThen(*n, Box::new(first.alpha_multisubst(map)), Box::new(second.alpha_multisubst(map))),
+            _ => self.clone()
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum AnnotatedLambdaExpr<S, N> where S: Copy, N: Copy {
     StringTerm(N, String),
     IntTerm(N, u32),
@@ -92,6 +172,57 @@ impl<S: Copy, N: Copy> AnnotatedLambdaExpr<S, N> {
     }
 }
 
+impl<S: Copy + AlphaSubbable, T: Copy> AlphaSubbable for AnnotatedLambdaExpr<S, T> {
+    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
+        match self {
+            Self::VarTerm(t, s) => Self::VarTerm(*t, s.alpha_subst(old, new)),
+            Self::ListCon(t, car, cdr) => Self::ListCon(*t, Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
+            Self::TermApplications(t, f, app) => Self::TermApplications(
+                *t,
+                Box::new(f.alpha_subst(old, new)),
+                Box::new(app.alpha_subst(old, new))
+            ),
+            Self::Lambda(t, s, expr) => Self::Lambda(*t, s.alpha_subst(old, new), Box::new(expr.alpha_subst(old, new))),
+            Self::LetIn(t, v, expr) => Self::LetIn(
+                *t, 
+                v.iter().map(|(s, e)| (s.alpha_subst(old, new), e.alpha_subst(old, new))).collect(),
+                Box::new(expr.alpha_subst(old, new))
+            ),
+            Self::CaseOf(t, s, hm) => Self::CaseOf(
+                *t,
+                s.alpha_subst(old, new),
+                annotated_alpha_subst(hm, old, new)
+            ),
+            Self::TryThen(t, first, second) => Self::TryThen(*t, Box::new(first.alpha_subst(old, new)), Box::new(second.alpha_subst(old, new))),
+            _ => self.clone()
+        }
+    }
+    fn alpha_multisubst(&self, map: &Vec<(SymbolID, SymbolID)>) -> Self {
+        match self {
+            Self::VarTerm(t, s) => Self::VarTerm(*t, s.alpha_multisubst(map)),
+            Self::ListCon(t, car, cdr) => Self::ListCon(*t, Box::new(car.alpha_multisubst(map)), Box::new(cdr.alpha_multisubst(map))),
+            Self::TermApplications(t, f, app) => Self::TermApplications(
+                *t,
+                Box::new(f.alpha_multisubst(map)),
+                Box::new(app.alpha_multisubst(map))
+            ),
+            Self::Lambda(t, s, expr) => Self::Lambda(*t, s.alpha_multisubst(map), Box::new(expr.alpha_multisubst(map))),
+            Self::LetIn(t, v, expr) => Self::LetIn(
+                *t, 
+                v.iter().map(|(s, e)| (s.alpha_multisubst(map), e.alpha_multisubst(map))).collect(),
+                Box::new(expr.alpha_multisubst(map))
+            ),
+            Self::CaseOf(t, s, hm) => Self::CaseOf(
+                *t,
+                s.alpha_multisubst(map),
+                annotated_alpha_multisubst(hm, map)
+            ),
+            Self::TryThen(t, first, second) => Self::TryThen(*t, Box::new(first.alpha_multisubst(map)), Box::new(second.alpha_multisubst(map))),
+            _ => self.clone()
+        }
+    }
+}
+
 pub type LambdaExpr = AnnotatedLambdaExpr<SymbolID, ()>;
 
 impl Recursible for LambdaExpr {
@@ -104,37 +235,6 @@ impl Recursible for LambdaExpr {
             Self::CaseOf(_, s, hm) => f(Self::CaseOf((), *s, HashMap::from_iter(hm.iter().map(|(arg, e)| (arg.clone(), e.recurse(f)))))),
             Self::TryThen(_, expr1, expr2) => f(Self::TryThen((), Box::new(expr1.recurse(f)), Box::new(expr2.recurse(f)))),
             _ => f(self.clone())
-        }
-    }
-}
-
-impl AlphaSubbable for LambdaExpr {
-    fn alpha_subst(&self, old: SymbolID, new: SymbolID) -> Self {
-        match self {
-            //Self::SimpleTerm(a) => Self::SimpleTerm(a.alpha_subst(old, new)),
-            Self::StringTerm(_, s) => Self::StringTerm((), s.clone()),
-            Self::IntTerm(_, n) => Self::IntTerm((), *n),
-            Self::BoolTerm(_, b) => Self::BoolTerm((), *b),
-            Self::VarTerm(_, s) => Self::VarTerm((), s.alpha_subst(old, new)),
-            Self::ListCon(_, car, cdr) => Self::ListCon((), Box::new(car.alpha_subst(old, new)), Box::new(cdr.alpha_subst(old, new))),
-            Self::TermApplications(_, f, app) => Self::TermApplications(
-                (),
-                Box::new(f.alpha_subst(old, new)),
-                Box::new(app.alpha_subst(old, new))
-            ),
-            Self::Lambda(_, s, expr) => Self::Lambda((), s.alpha_subst(old, new), Box::new(expr.alpha_subst(old, new))),
-            Self::LetIn(_, v, expr) => Self::LetIn(
-                (), 
-                v.iter().map(|(s, e)| (s.alpha_subst(old, new), e.alpha_subst(old, new))).collect(),
-                Box::new(expr.alpha_subst(old, new))
-            ),
-            Self::CaseOf(_, s, hm) => Self::CaseOf(
-                (),
-                s.alpha_subst(old, new),
-                alpha_subst(hm, old, new)
-            ),
-            Self::TryThen(_, first, second) => Self::TryThen((), Box::new(first.alpha_subst(old, new)), Box::new(second.alpha_subst(old, new))),
-            _ => self.clone()
         }
     }
 }
@@ -181,10 +281,34 @@ impl<N> fmt::Display for AnnotatedLambdaExpr<SymbolID, N> where N: Copy {
     }
 }
 
-fn alpha_subst(hm: &HashMap<Arg, LambdaExpr>, old: SymbolID, new: SymbolID) -> HashMap<Arg, LambdaExpr> {
+fn annotated_alpha_subst<S : Copy + AlphaSubbable, N : Copy>(hm: &HashMap<Arg, AnnotatedLambdaExpr<S, N>>, old: SymbolID, new: SymbolID) -> HashMap<Arg, AnnotatedLambdaExpr<S, N>> {
     let mut new_hm = HashMap::new();
     for (arg, e) in hm.iter() {
         new_hm.insert(arg.alpha_subst(old, new), e.alpha_subst(old, new));
+    }
+    new_hm
+}
+
+fn annotated_alpha_multisubst<S : Copy + AlphaSubbable, N : Copy>(hm: &HashMap<Arg, AnnotatedLambdaExpr<S, N>>, map: &Vec<(SymbolID, SymbolID)>) -> HashMap<Arg, AnnotatedLambdaExpr<S, N>> {
+    let mut new_hm = HashMap::new();
+    for (arg, e) in hm.iter() {
+        new_hm.insert(arg.alpha_multisubst(map), e.alpha_multisubst(map));
+    }
+    new_hm
+}
+
+fn supercombinator_alpha_subst<S : Copy + AlphaSubbable, N : Copy>(hm: &HashMap<Arg, SupercombinatorExpr<S, N>>, old: SymbolID, new: SymbolID) -> HashMap<Arg, SupercombinatorExpr<S, N>> {
+    let mut new_hm = HashMap::new();
+    for (arg, e) in hm.iter() {
+        new_hm.insert(arg.alpha_subst(old, new), e.alpha_subst(old, new));
+    }
+    new_hm
+}
+
+fn supercombinator_alpha_multisubst<S : Copy + AlphaSubbable, N : Copy>(hm: &HashMap<Arg, SupercombinatorExpr<S, N>>, map: &Vec<(SymbolID, SymbolID)>) -> HashMap<Arg, SupercombinatorExpr<S, N>> {
+    let mut new_hm = HashMap::new();
+    for (arg, e) in hm.iter() {
+        new_hm.insert(arg.alpha_multisubst(map), e.alpha_multisubst(map));
     }
     new_hm
 }

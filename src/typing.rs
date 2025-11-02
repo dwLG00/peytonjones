@@ -80,12 +80,12 @@ impl LambdaExprWithID {
 
 #[derive(Debug, Clone)]
 pub struct TypeTable {
-    expr_table: ExprTypeTable,
-    symbol_table: SymbolTypeMap,
-    global_symbol_table: SymbolTypeMap,
-    variable_set: DisjointSetVec<Option<Type>>,
+    expr_table: ExprTypeTable, // Maps expression type variable -> actual type value
+    symbol_table: SymbolTypeMap, // Maps symbol -> actual type value
+    global_symbol_table: SymbolTypeMap, // Maps global symbol -> actual type value
+    variable_set: DisjointSetVec<Option<Type>>, // Used for type unification
     next_vartype: u32,
-    next_expr: u32
+    next_expr: ExprID
 }
 
 impl TypeTable {
@@ -100,6 +100,12 @@ impl TypeTable {
         }
     }
 
+    pub fn grab_expr(&mut self) -> ExprID {
+        let temp = self.next_expr;
+        self.next_expr += 1;
+        temp
+    }
+
     pub fn grab_infer(&mut self) -> (u32, Type) {
         let temp = self.next_vartype;
         self.next_vartype += 1;
@@ -107,7 +113,7 @@ impl TypeTable {
         (temp, Type::Infer(temp))
     }
 
-    fn insert_expr(&mut self, e: ExprID, t: Type) {
+    pub fn insert_expr(&mut self, e: ExprID, t: Type) {
         self.expr_table.insert(e, t);
     }
 
@@ -239,9 +245,7 @@ impl TypeTable {
 pub fn identify(s: LambdaExpr, tt: &mut TypeTable) -> LambdaExprWithID {
     // Return AST with the same 
     let mut register_node = |_| {
-        let temp = tt.next_expr;
-        tt.next_expr += 1;
-        temp
+        tt.grab_expr()
     };
     s.map(&mut register_node)
 }
