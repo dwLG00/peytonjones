@@ -101,16 +101,55 @@ pub fn reduce_lambda(lambda_expr: &AnnotatedLambdaExpr<SymbolID, ExprID>, superc
             let index = supercombinator_store.len();
             let mut alphad_free_vars_vec: Vec<SymbolID> = alpha_sub_map.iter().map(|x| x.1).collect(); // The ids of the new (alpha-subbed) variables
             alphad_free_vars_vec.push(*s); // [a', b', c', ..., s]
-            let supercombinator = Supercombinator {
-                variables: alphad_free_vars_vec, // order: [a, b, c, ..., s] implies $Y a b c ... = E
-                body: alphad_sc_expr
-            };
-            supercombinator_store.push(supercombinator);
-            // build supercombination application expression (i.e. $Y a b c ... to replace the lambda expression (\lambda x. \lambda y. ...) a b c) and return
-            let supercombinator_expr = build_supercombinator_expr(index, &free_vars_vec, sc_expr.get_type(), type_table); // This is all type-assigned and everything
-            supercombinator_expr
+            // Ensure that we don't have (effectively) $Y_1 a b c ... s = $Y_2 a b c ... s, or else we can just emit $Y_2
+            if let Some((e, sc_id)) = duplicate_supercombinator(&alphad_free_vars_vec, &alphad_sc_expr) {
+                // Copy over the type and emit just the supercombinator
+                let expr_id = type_table.grab_expr();
+                let sc_type = type_table.get_expr(&e).unwrap().clone();
+                type_table.insert_expr(expr_id, sc_type);
+                SupercombinatorExpr::Supercombinator(expr_id, sc_id)
+            } else {
+                let supercombinator = Supercombinator {
+                    variables: alphad_free_vars_vec, // order: [a, b, c, ..., s] implies $Y a b c ... = E
+                    body: alphad_sc_expr
+                };
+                supercombinator_store.push(supercombinator);
+                // build supercombination application expression (i.e. $Y a b c ... to replace the lambda expression (\lambda x. \lambda y. ...) a b c) and return
+                let supercombinator_expr = build_supercombinator_expr(index, &free_vars_vec, sc_expr.get_type(), type_table); // This is all type-assigned and everything
+                supercombinator_expr
+            }
         },
         AnnotatedLambdaExpr::FAIL => SupercombinatorExpr::FAIL
+    }
+}
+
+fn duplicate_supercombinator(alphad_free_vars_vec: &Vec<SymbolID>, expr: &SupercombinatorExpr<SymbolID, ExprID>) -> Option<(ExprID, u32)> {
+    // Check if expr = $Y a_1 a_2 ... a_n, where alphad_free_vars_vec = [a_1, a_2, ..., a_n]
+    let mut head = expr;
+    let mut idx = alphad_free_vars_vec.len();
+    loop {
+        match head {
+            SupercombinatorExpr::TermApplications(_, func, app) => {
+                match **app {
+                    SupercombinatorExpr::VarTerm(_, s) => if s != alphad_free_vars_vec[idx - 1] {
+                        return None
+                    } else if idx == 0 {
+                        return None
+                    } else {
+                        idx -= 1;
+                        head = func.as_ref();
+                    },
+                    _ => {panic!("[duplicate_supercombinator] Expected variable, found {:?} instead", app)}
+                }
+            },
+            SupercombinatorExpr::Supercombinator(e, sc_id) => {
+                if idx > 0 {
+                    return None;
+                }
+                return Some((*e, *sc_id))
+            },
+            _ => return None
+        }
     }
 }
 
