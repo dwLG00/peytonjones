@@ -106,6 +106,14 @@ impl TypeTable {
         temp
     }
 
+    pub fn clone_expr(&mut self, e: ExprID) -> Option<ExprID> {
+        // Creates a new id with same type as given id, and returns it
+        let e_new = self.grab_expr();
+        let t = self.get_expr(&e)?.clone();
+        self.insert_expr(e_new, t);
+        Some(e_new)
+    }
+
     pub fn grab_infer(&mut self) -> (u32, Type) {
         let temp = self.next_vartype;
         self.next_vartype += 1;

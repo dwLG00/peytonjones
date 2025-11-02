@@ -131,9 +131,7 @@ pub fn reduce_lambda(lambda_expr: &AnnotatedLambdaExpr<SymbolID, ExprID>, superc
             // Ensure that we don't have (effectively) $Y_1 a b c ... s = $Y_2 a b c ... s, or else we can just emit $Y_2
             if let Some((e, sc_id)) = duplicate_supercombinator(&alphad_free_vars_vec, &alphad_sc_expr) {
                 // Copy over the type and emit just the supercombinator
-                let expr_id = type_table.grab_expr();
-                let sc_type = type_table.get_expr(&e).unwrap().clone();
-                type_table.insert_expr(expr_id, sc_type);
+                let expr_id = type_table.clone_expr(e).unwrap();
                 SupercombinatorExpr::Supercombinator(expr_id, sc_id)
             } else {
                 let supercombinator = Supercombinator {
@@ -293,13 +291,11 @@ fn register_nullary_functions(supercombinators: &mut Vec<Supercombinator>, funct
                 // Create a new expression id with the same type
                 let index = supercombinators.len();
                 let e = expression.get_type();
-                let new_exprid = type_table.grab_expr();
-                let t = type_table.get_expr(e).unwrap().clone();
-                type_table.insert_expr(new_exprid, t);
+                let new_exprid = type_table.clone_expr(*e).unwrap();
 
                 // Create the nullary supercombinator which executes the body of the nullary function, and swap out the body for the supercombinator call.
                 // Because of borrow rules this happens in reverse
-                let sc_expr = SupercombinatorExpr::<SymbolID, ExprID>::Supercombinator(*e, index as u32);
+                let sc_expr = SupercombinatorExpr::<SymbolID, ExprID>::Supercombinator(new_exprid, index as u32);
                 let nullary_body = std::mem::replace(expression, sc_expr);
                 let supercombinator = Supercombinator {
                     variables: Vec::new(),
@@ -350,9 +346,7 @@ fn sc_rewrite_functions(supercombinator: &mut SupercombinatorExpr<SymbolID, Expr
         },
         SupercombinatorExpr::VarTerm(e, s) => {
             if let Some(sc_id) = func_to_sc_map.get(s) {
-                let expr_id = type_table.grab_expr();
-                let t = type_table.get_expr(e).unwrap().clone();
-                type_table.insert_expr(expr_id, t);
+                let expr_id = type_table.clone_expr(*e).unwrap();
                 *supercombinator = SupercombinatorExpr::Supercombinator(expr_id, *sc_id);
             }
         },
