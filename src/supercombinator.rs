@@ -15,12 +15,31 @@ pub struct Supercombinator {
     body: SupercombinatorExpr<SymbolID, ExprID>
 }
 
-pub fn supercombinate(lambda_exprs: &mut Vec<(u32, AnnotatedLambdaExpr<SymbolID, ExprID>)>, symbol_stack: &mut SymbolStack, type_table: &mut TypeTable) -> Vec<Supercombinator> {
+pub fn supercombinate(lambda_exprs: &BTreeMap<u32, AnnotatedLambdaExpr<u32, u32>>, symbol_stack: &mut SymbolStack, type_table: &mut TypeTable) -> Vec<Supercombinator> {
     let mut supercombinator_store = Vec::new();
     let sstack = &mut symbol_stack.to_sstack();
+    let mut function_definitions = Vec::new();
+    // build up supercombinators, and write each function as a supercombinator
     for (symbol, expr) in lambda_exprs {
         let top_level_sc_body = reduce_lambda(expr, &mut supercombinator_store, sstack, type_table);
+        function_definitions.push((*symbol, top_level_sc_body));
     }
+    // Loop back and rewrite each global function reference as a supercombinator
+    register_nullary_functions(&mut supercombinator_store, &mut function_definitions, type_table);
+    rewrite_functions(&mut supercombinator_store, &mut function_definitions, type_table);
+    
+
+    /*
+    println!("Supercombinators:");
+    for (i, supercombinator) in supercombinator_store.iter().enumerate() {
+        println!("Y{}: {:?}", i, supercombinator);
+    }
+    println!();
+    println!("Function definitions:");
+    for (symbol, sc_body) in function_definitions.iter() {
+        println!("s{}: {:?}", symbol, sc_body);
+    }
+    */
     return supercombinator_store
 }
 
@@ -32,6 +51,19 @@ pub fn supercombinate_debug(lambda_exprs: &BTreeMap<u32, AnnotatedLambdaExpr<u32
         let top_level_sc_body = reduce_lambda(expr, &mut supercombinator_store, sstack, type_table);
         function_definitions.push((*symbol, top_level_sc_body));
     }
+    println!("Supercombinators:");
+    for (i, supercombinator) in supercombinator_store.iter().enumerate() {
+        println!("Y{}: {:?}", i, supercombinator);
+    }
+    println!();
+    println!("Function definitions:");
+    for (symbol, sc_body) in function_definitions.iter() {
+        println!("s{}: {:?}", symbol, sc_body);
+    }
+    println!("\n\n");
+    // Loop back and rewrite each global function reference as a supercombinator
+    register_nullary_functions(&mut supercombinator_store, &mut function_definitions, type_table);
+    rewrite_functions(&mut supercombinator_store, &mut function_definitions, type_table);
     println!("Supercombinators:");
     for (i, supercombinator) in supercombinator_store.iter().enumerate() {
         println!("Y{}: {:?}", i, supercombinator);
@@ -250,6 +282,84 @@ pub fn arg_symbols(arg: &Arg, sstack: &mut SStack) {
         Arg::ListCon(car, cdr) => {
             arg_symbols(car, sstack);
             arg_symbols(cdr, sstack);
+        },
+        _ => {}
+    }
+}
+
+fn register_nullary_functions(supercombinators: &mut Vec<Supercombinator>, function_defs: &mut Vec<(SymbolID, SupercombinatorExpr<SymbolID, ExprID>)>, type_table: &mut TypeTable) {
+    for (symbol, expression) in function_defs.iter_mut() {
+        match expression {
+            SupercombinatorExpr::Supercombinator(_, _) => {},
+            _ => {
+                // Found nullary function, since all lambdas are the form of supercombinators
+                // This nullary function is guaranteed to be in supercombinator form
+
+                // Create a new expression id with the same type
+                let index = supercombinators.len();
+                let e = expression.get_type();
+                let new_exprid = type_table.grab_expr();
+                let t = type_table.get_expr(e).unwrap().clone();
+                type_table.insert_expr(new_exprid, t);
+
+                // Create the nullary supercombinator which executes the body of the nullary function, and swap out the body for the supercombinator call.
+                // Because of borrow rules this happens in reverse
+                let sc_expr = SupercombinatorExpr::<SymbolID, ExprID>::Supercombinator(*e, index as u32);
+                let nullary_body = std::mem::replace(expression, sc_expr);
+                let supercombinator = Supercombinator {
+                    variables: Vec::new(),
+                    body: nullary_body
+                };
+                supercombinators.push(supercombinator);
+            }
+        }
+    }
+}
+
+fn rewrite_functions(supercombinators: &mut Vec<Supercombinator>, function_defs: &Vec<(u32, SupercombinatorExpr<u32, u32>)>, type_table: &mut TypeTable) {
+    let func_to_sc_map: HashMap<SymbolID, u32> = function_defs.iter().map(|(func_id, supercombinator)| {
+        match supercombinator {
+            SupercombinatorExpr::Supercombinator(_, sc_id) => (*func_id, *sc_id),
+            _ => panic!("[rewrite_functions] Expected function to point to a Supercombinator, found {:?} instead", supercombinator)
+        }
+    }).collect();
+    for supercombinator in supercombinators.iter_mut() {
+        sc_rewrite_functions(&mut supercombinator.body, &func_to_sc_map, type_table);
+    }
+}
+
+fn sc_rewrite_functions(supercombinator: &mut SupercombinatorExpr<SymbolID, ExprID>, func_to_sc_map: &HashMap<SymbolID, u32>, type_table: &mut TypeTable) {
+    match supercombinator {
+        SupercombinatorExpr::TermApplications(_, func, app) => {
+            sc_rewrite_functions(func.as_mut(), func_to_sc_map, type_table);
+            sc_rewrite_functions(app.as_mut(), func_to_sc_map, type_table);
+        },
+        SupercombinatorExpr::ListCon(_, car, cdr) => {
+            sc_rewrite_functions(car.as_mut(), func_to_sc_map, type_table);
+            sc_rewrite_functions(cdr.as_mut(), func_to_sc_map, type_table);
+        },
+        SupercombinatorExpr::LetIn(_, defs, body) => {
+            for (_, def) in defs.iter_mut() {
+                sc_rewrite_functions(def, func_to_sc_map, type_table);
+            }
+            sc_rewrite_functions(body.as_mut(), func_to_sc_map, type_table);
+        },
+        SupercombinatorExpr::CaseOf(_, _, cases) => {
+            for (_, case) in cases.iter_mut() {
+                sc_rewrite_functions(case, func_to_sc_map, type_table);
+            }
+        },
+        SupercombinatorExpr::TryThen(_, expr1, expr2) => {
+            sc_rewrite_functions(expr1.as_mut(), func_to_sc_map, type_table);
+            sc_rewrite_functions(expr2.as_mut(), func_to_sc_map, type_table);
+        },
+        SupercombinatorExpr::VarTerm(e, s) => {
+            if let Some(sc_id) = func_to_sc_map.get(s) {
+                let expr_id = type_table.grab_expr();
+                let t = type_table.get_expr(e).unwrap().clone();
+                type_table.insert_expr(expr_id, t);
+                *supercombinator = SupercombinatorExpr::Supercombinator(expr_id, *sc_id);
+            }
         },
         _ => {}
     }
